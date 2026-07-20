@@ -1,0 +1,17 @@
+package com.example.railgo;
+
+import com.example.railgo.security.JwtProperties;
+import org.mybatis.spring.annotation.MapperScan;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+
+@SpringBootApplication
+@MapperScan("com.example.railgo.mapper")
+@EnableConfigurationProperties(JwtProperties.class)
+public class Application {
+
+    public static void main(String[] args) {
+        SpringApplication.run(Application.class, args);
+    }
+}

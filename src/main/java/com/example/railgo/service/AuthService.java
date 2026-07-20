@@ -1,0 +1,379 @@
+package com.example.railgo.service;
+
+
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.example.railgo.data.dto.LoginRequest;
+import com.example.railgo.data.dto.LogoutRequest;
+import com.example.railgo.data.dto.RefreshTokenRequest;
+import com.example.railgo.data.dto.RegisterRequest;
+import com.example.railgo.data.po.AuthRefreshToken;
+import com.example.railgo.data.po.SysUser;
+import com.example.railgo.data.vo.AuthResponse;
+import com.example.railgo.exception.BusinessException;
+import com.example.railgo.exception.ErrorCode;
+import com.example.railgo.mapper.AuthRefreshTokenMapper;
+import com.example.railgo.mapper.SysUserMapper;
+import com.example.railgo.security.JwtTokenProvider;
+import com.example.railgo.security.TokenClaims;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+public class AuthService {
+
+    private static final String DEFAULT_ROLE =
+            "PASSENGER";
+
+    private final SysUserMapper userMapper;
+
+    private final AuthRefreshTokenMapper
+            refreshTokenMapper;
+
+    private final PasswordEncoder passwordEncoder;
+
+    private final JwtTokenProvider tokenProvider;
+
+    private final VerificationCodeService
+            verificationCodeService;
+
+    private final LoginAttemptService
+            loginAttemptService;
+
+    private final UserService userService;
+
+    @Transactional
+    public AuthResponse register(
+            RegisterRequest request) {
+
+        verificationCodeService.verify(
+                request.phone(),
+                request.verificationCode()
+        );
+
+        if (findByPhone(request.phone()) != null) {
+            throw new BusinessException(
+                    ErrorCode.PHONE_EXISTS
+            );
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+
+        SysUser user = new SysUser();
+
+        user.setPhone(request.phone());
+
+        user.setPasswordHash(
+                passwordEncoder.encode(
+                        request.password()
+                )
+        );
+
+        if (request.nickname() == null
+                || request.nickname().isBlank()) {
+
+            user.setNickname(
+                    "用户"
+                            + request.phone()
+                            .substring(7)
+            );
+
+        } else {
+            user.setNickname(
+                    request.nickname().trim()
+            );
+        }
+
+        user.setStatus("ENABLED");
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
+
+        userMapper.insert(user);
+
+        int roleRows = userMapper.insertUserRole(
+                user.getId(),
+                DEFAULT_ROLE
+        );
+
+        if (roleRows != 1) {
+            throw new BusinessException(
+                    ErrorCode.DATABASE_ERROR,
+                    "默认角色未初始化"
+            );
+        }
+
+        return issueTokens(user);
+    }
+
+    @Transactional
+    public AuthResponse login(
+            LoginRequest request) {
+
+        loginAttemptService.checkAllowed(
+                request.phone()
+        );
+
+        SysUser user = findByPhone(
+                request.phone()
+        );
+
+        if (user == null
+                || !passwordEncoder.matches(
+                request.password(),
+                user.getPasswordHash()
+        )) {
+
+            loginAttemptService.recordFailure(
+                    request.phone()
+            );
+
+            throw new BusinessException(
+                    ErrorCode.LOGIN_FAILED
+            );
+        }
+
+        if (!"ENABLED".equals(
+                user.getStatus()
+        )) {
+            throw new BusinessException(
+                    ErrorCode.ACCOUNT_DISABLED
+            );
+        }
+
+        loginAttemptService.recordSuccess(
+                request.phone()
+        );
+
+        user.setLastLoginAt(
+                LocalDateTime.now()
+        );
+
+        user.setUpdatedAt(
+                LocalDateTime.now()
+        );
+
+        userMapper.updateById(user);
+
+        return issueTokens(user);
+    }
+
+    @Transactional
+    public AuthResponse refresh(
+            RefreshTokenRequest request) {
+
+        TokenClaims claims =
+                tokenProvider.parseRefreshToken(
+                        request.refreshToken()
+                );
+
+        AuthRefreshToken stored =
+                refreshTokenMapper.selectOne(
+                        Wrappers
+                                .<AuthRefreshToken>
+                                        lambdaQuery()
+                                .eq(
+                                        AuthRefreshToken
+                                                ::getTokenJti,
+                                        claims.jti()
+                                )
+                                .eq(
+                                        AuthRefreshToken
+                                                ::getUserId,
+                                        claims.userId()
+                                )
+                                .isNull(
+                                        AuthRefreshToken
+                                                ::getRevokedAt
+                                )
+                                .gt(
+                                        AuthRefreshToken
+                                                ::getExpiresAt,
+                                        LocalDateTime.now()
+                                )
+                );
+
+        if (stored == null) {
+            throw new BusinessException(
+                    ErrorCode.REFRESH_TOKEN_INVALID
+            );
+        }
+
+        int updated = refreshTokenMapper.update(
+                null,
+                Wrappers
+                        .<AuthRefreshToken>
+                                lambdaUpdate()
+                        .eq(
+                                AuthRefreshToken::getId,
+                                stored.getId()
+                        )
+                        .isNull(
+                                AuthRefreshToken
+                                        ::getRevokedAt
+                        )
+                        .set(
+                                AuthRefreshToken
+                                        ::getRevokedAt,
+                                LocalDateTime.now()
+                        )
+        );
+
+        if (updated != 1) {
+            throw new BusinessException(
+                    ErrorCode.REFRESH_TOKEN_INVALID
+            );
+        }
+
+        SysUser user = userMapper.selectById(
+                claims.userId()
+        );
+
+        if (user == null
+                || !"ENABLED".equals(
+                user.getStatus()
+        )) {
+
+            throw new BusinessException(
+                    ErrorCode.ACCOUNT_DISABLED
+            );
+        }
+
+        return issueTokens(user);
+    }
+
+    @Transactional
+    public void logout(
+            Long currentUserId,
+            LogoutRequest request) {
+
+        if (request == null
+                || request.refreshToken() == null
+                || request.refreshToken().isBlank()) {
+
+            refreshTokenMapper.revokeAllByUserId(
+                    currentUserId,
+                    LocalDateTime.now()
+            );
+
+            return;
+        }
+
+        TokenClaims claims =
+                tokenProvider.parseRefreshToken(
+                        request.refreshToken()
+                );
+
+        if (!currentUserId.equals(
+                claims.userId()
+        )) {
+            throw new BusinessException(
+                    ErrorCode.FORBIDDEN
+            );
+        }
+
+        refreshTokenMapper.update(
+                null,
+                Wrappers
+                        .<AuthRefreshToken>
+                                lambdaUpdate()
+                        .eq(
+                                AuthRefreshToken
+                                        ::getTokenJti,
+                                claims.jti()
+                        )
+                        .eq(
+                                AuthRefreshToken
+                                        ::getUserId,
+                                currentUserId
+                        )
+                        .isNull(
+                                AuthRefreshToken
+                                        ::getRevokedAt
+                        )
+                        .set(
+                                AuthRefreshToken
+                                        ::getRevokedAt,
+                                LocalDateTime.now()
+                        )
+        );
+    }
+
+    private AuthResponse issueTokens(
+            SysUser user) {
+
+        List<String> roles =
+                userMapper
+                        .selectRoleCodesByUserId(
+                                user.getId()
+                        );
+
+        String accessToken =
+                tokenProvider.createAccessToken(
+                        user.getId(),
+                        user.getPhone(),
+                        roles
+                );
+
+        String refreshToken =
+                tokenProvider.createRefreshToken(
+                        user.getId(),
+                        user.getPhone(),
+                        roles
+                );
+
+        TokenClaims refreshClaims =
+                tokenProvider.parseRefreshToken(
+                        refreshToken
+                );
+
+        AuthRefreshToken record =
+                new AuthRefreshToken();
+
+        record.setUserId(user.getId());
+
+        record.setTokenJti(
+                refreshClaims.jti()
+        );
+
+        record.setExpiresAt(
+                LocalDateTime.ofInstant(
+                        refreshClaims.expiresAt(),
+                        ZoneId.systemDefault()
+                )
+        );
+
+        record.setCreatedAt(
+                LocalDateTime.now()
+        );
+
+        refreshTokenMapper.insert(record);
+
+        return new AuthResponse(
+                "Bearer",
+                accessToken,
+                refreshToken,
+                tokenProvider
+                        .getAccessTokenSeconds(),
+                userService.toProfile(user)
+        );
+    }
+
+    private SysUser findByPhone(
+            String phone) {
+
+        return userMapper.selectOne(
+                Wrappers
+                        .<SysUser>lambdaQuery()
+                        .eq(
+                                SysUser::getPhone,
+                                phone
+                        )
+        );
+    }
+}
