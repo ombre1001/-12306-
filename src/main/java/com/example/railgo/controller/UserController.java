@@ -15,10 +15,22 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import com.example.railgo.data.dto.CreatePassengerRequest;
+import com.example.railgo.data.dto.UpdatePassengerRequest;
+import com.example.railgo.data.vo.PassengerResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Positive;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+
+import java.util.List;
 
 @Tag(
-        name = "当前用户接口",
-        description = "查询和修改当前登录用户资料"
+        name = "用户接口",
+        description = "个人资料、密码和常用乘车人管理"
 )
 @SecurityRequirement(name = "bearerAuth")
 @RestController
@@ -93,4 +105,112 @@ public class UserController {
 
         return Result.ok();
     }
+
+    @Operation(summary = "查询当前用户的常用乘车人")
+    @GetMapping("/passengers")
+    public ResponseEntity<
+            Result<List<PassengerResponse>>>
+    getPassengers(
+            @AuthenticationPrincipal
+            RailUserPrincipal principal) {
+
+        return Result.success(
+                userService.getPassengers(
+                        principal.userId()
+                )
+        );
+    }
+
+    @Operation(summary = "查询常用乘车人详情")
+    @GetMapping("/passengers/{id}")
+    public ResponseEntity<
+            Result<PassengerResponse>>
+    getPassenger(
+            @AuthenticationPrincipal
+            RailUserPrincipal principal,
+
+            @PathVariable
+            @Positive(
+                    message = "乘车人ID必须为正整数"
+            )
+            Long id) {
+
+        return Result.success(
+                userService.getPassenger(
+                        principal.userId(),
+                        id
+                )
+        );
+    }
+
+    @Operation(summary = "新增常用乘车人")
+    @PostMapping("/passengers")
+    public ResponseEntity<
+            Result<PassengerResponse>>
+    createPassenger(
+            @AuthenticationPrincipal
+            RailUserPrincipal principal,
+
+            @Valid
+            @RequestBody
+            CreatePassengerRequest request) {
+
+        return Result.success(
+                userService.createPassenger(
+                        principal.userId(),
+                        request
+                ),
+                "乘车人添加成功"
+        );
+    }
+
+    @Operation(summary = "修改常用乘车人")
+    @PutMapping("/passengers/{id}")
+    public ResponseEntity<
+            Result<PassengerResponse>>
+    updatePassenger(
+            @AuthenticationPrincipal
+            RailUserPrincipal principal,
+
+            @PathVariable
+            @Positive(
+                    message = "乘车人ID必须为正整数"
+            )
+            Long id,
+
+            @Valid
+            @RequestBody
+            UpdatePassengerRequest request) {
+
+        return Result.success(
+                userService.updatePassenger(
+                        principal.userId(),
+                        id,
+                        request
+                ),
+                "乘车人修改成功"
+        );
+    }
+
+    @Operation(summary = "删除常用乘车人")
+    @DeleteMapping("/passengers/{id}")
+    public ResponseEntity<Result<Void>>
+    deletePassenger(
+            @AuthenticationPrincipal
+            RailUserPrincipal principal,
+
+            @PathVariable
+            @Positive(
+                    message = "乘车人ID必须为正整数"
+            )
+            Long id) {
+
+        userService.deletePassenger(
+                principal.userId(),
+                id
+        );
+
+        return Result.ok();
+    }
+
 }

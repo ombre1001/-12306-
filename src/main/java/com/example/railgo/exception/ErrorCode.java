@@ -72,6 +72,24 @@ public enum ErrorCode {
             "账号已被禁用"
     ),
 
+    PASSENGER_EXISTS(
+            40908,
+            HttpStatus.CONFLICT,
+            "该证件对应的乘车人已存在"
+    ),
+
+    PASSENGER_LIMIT_EXCEEDED(
+            40909,
+            HttpStatus.CONFLICT,
+            "常用乘车人数量已达上限"
+    ),
+
+    PASSENGER_IN_USE(
+            40910,
+            HttpStatus.CONFLICT,
+            "乘车人已被有效订单使用，不能删除"
+    ),
+
     DATABASE_ERROR(
             50001,
             HttpStatus.INTERNAL_SERVER_ERROR,
