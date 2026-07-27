@@ -89,6 +89,11 @@ public class SecurityConfig {
                                 "/api/v1/stations/**"
                         )
                         .permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/dictionaries/**"
+                        )
+                        .permitAll()
 
                         .anyRequest()
                         .authenticated()
