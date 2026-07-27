@@ -84,6 +84,11 @@ public class SecurityConfig {
                                 "/swagger-ui.html"
                         )
                         .permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/stations/**"
+                        )
+                        .permitAll()
 
                         .anyRequest()
                         .authenticated()
