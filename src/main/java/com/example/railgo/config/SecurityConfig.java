@@ -97,6 +97,17 @@ public class SecurityConfig {
                                 "/api/v1/tickets/runs/*/fares"
                         ).permitAll()
 
+                        // 业务管理员、系统管理员
+                        .requestMatchers("/api/v1/admin/**")
+                        .hasAnyRole(
+                                "BUSINESS_ADMIN",
+                                "SYSTEM_ADMIN"
+                        )
+
+                        // 系统管理员专属接口
+                        .requestMatchers("/api/v1/system/**")
+                        .hasRole("SYSTEM_ADMIN")
+
                         .anyRequest()
                         .authenticated()
                 )

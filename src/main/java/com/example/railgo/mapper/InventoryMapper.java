@@ -1,7 +1,6 @@
 package com.example.railgo.mapper;
 
 import com.example.railgo.data.vo.InventorySummaryResponse;
-import com.example.railgo.data.vo.InventorySummaryResponse;
 import com.example.railgo.data.vo.row.CandidateSeatRow;
 import com.example.railgo.data.vo.row.SegmentLockRow;
 import org.apache.ibatis.annotations.Mapper;

@@ -121,6 +121,35 @@ public enum ErrorCode {
     ORDER_ITEM_CREATE_FAILED(50013, HttpStatus.INTERNAL_SERVER_ERROR, "订单明细创建失败"),
     ORDER_ITEM_UPDATE_FAILED(50014, HttpStatus.INTERNAL_SERVER_ERROR, "订单明细更新失败"),
 
+    // 管理端车站
+    STATION_NOT_FOUND(40421, HttpStatus.NOT_FOUND, "车站不存在"),
+    STATION_CODE_EXISTS(40921, HttpStatus.CONFLICT, "车站编码已存在"),
+    STATION_NAME_EXISTS(40922, HttpStatus.CONFLICT, "车站名称已存在"),
+    STATION_STATUS_INVALID(40021, HttpStatus.BAD_REQUEST, "车站状态不合法"),
+
+    // 管理端车次
+    TRAIN_NOT_FOUND(40422, HttpStatus.NOT_FOUND, "车次不存在"),
+    TRAIN_NO_EXISTS(40923, HttpStatus.CONFLICT, "车次编号已存在"),
+    TRAIN_STATUS_INVALID(40022, HttpStatus.BAD_REQUEST, "车次状态不合法"),
+    TRAIN_STRUCTURE_IN_USE(40924, HttpStatus.CONFLICT, "车次已生成运行实例，不能修改运行结构"),
+
+    TRAIN_STOP_INVALID(40023, HttpStatus.BAD_REQUEST, "经停站数据不合法"),
+    TRAIN_STOP_SEQ_INVALID(40024, HttpStatus.BAD_REQUEST, "经停站序必须从1开始连续递增"),
+    TRAIN_STOP_TIME_INVALID(40025, HttpStatus.BAD_REQUEST, "经停站时刻不合法"),
+
+    COACH_NOT_FOUND(40423, HttpStatus.NOT_FOUND, "车厢不存在"),
+    COACH_DUPLICATED(40925, HttpStatus.CONFLICT, "同一车次的车厢号不能重复"),
+    SEAT_TEMPLATE_INVALID(40026, HttpStatus.BAD_REQUEST, "座位模板不合法"),
+    SEAT_ALREADY_EXISTS(40926, HttpStatus.CONFLICT, "该车厢已经生成座位"),
+
+    FARE_INVALID(40027, HttpStatus.BAD_REQUEST, "票价数据不合法"),
+    FARE_DUPLICATED(40927, HttpStatus.CONFLICT, "同一区间、席别的票价重复"),
+
+    // 管理端运行计划
+    RUN_DATE_RANGE_INVALID(40028, HttpStatus.BAD_REQUEST, "运行日期范围不合法"),
+    RUN_SALE_STATUS_INVALID(40029, HttpStatus.BAD_REQUEST, "运行状态转换不合法"),
+    RUN_ALREADY_HAS_ORDER(40928, HttpStatus.CONFLICT, "运行实例已有订单，只能停运，不能删除"),
+
     INTERNAL_ERROR(
             50000,
             HttpStatus.INTERNAL_SERVER_ERROR,
