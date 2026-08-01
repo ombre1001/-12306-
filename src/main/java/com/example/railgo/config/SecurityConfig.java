@@ -69,31 +69,33 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
 
+                        // 登录、注册、刷新令牌
                         .requestMatchers(
-                                HttpMethod.POST,
-                                "/api/v1/auth/register",
                                 "/api/v1/auth/login",
+                                "/api/v1/auth/register",
                                 "/api/v1/auth/refresh"
-                        )
-                        .permitAll()
+                        ).permitAll()
 
+                        // Swagger / OpenAPI
                         .requestMatchers(
-                                "/v3/api-docs/**",
-                                "/v3/api-docs.yaml",
                                 "/swagger-ui/**",
-                                "/swagger-ui.html"
-                        )
-                        .permitAll()
-                        .requestMatchers(
-                                HttpMethod.GET,
+                                "/swagger-ui.html",
+                                "/v3/api-docs/**"
+                        ).permitAll()
+
+                        // 公共车站查询
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/stations",
                                 "/api/v1/stations/**"
-                        )
-                        .permitAll()
-                        .requestMatchers(
-                                HttpMethod.GET,
-                                "/api/v1/dictionaries/**"
-                        )
-                        .permitAll()
+                        ).permitAll()
+
+                        // 公共车票查询
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/tickets/direct",
+                                "/api/v1/tickets/transfers",
+                                "/api/v1/tickets/runs/*/stops",
+                                "/api/v1/tickets/runs/*/fares"
+                        ).permitAll()
 
                         .anyRequest()
                         .authenticated()

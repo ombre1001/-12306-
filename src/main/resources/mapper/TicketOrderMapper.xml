@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.railgo.mapper.TicketOrderMapper">
+
+    <select id="selectByClientRequestId"
+            resultType="com.example.railgo.data.po.TicketOrder">
+        SELECT *
+        FROM ticket_order
+        WHERE user_id = #{userId}
+        AND client_request_id = #{clientRequestId}
+        LIMIT 1
+    </select>
+
+</mapper>

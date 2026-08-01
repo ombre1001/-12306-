@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.railgo.mapper.InventoryMapper">
+    <select id="selectRunSaleStatusForUpdate" resultType="java.lang.String">
+        SELECT sale_status FROM train_run WHERE id = #{runId} FOR UPDATE
+    </select>
+    <select id="countTrainStops" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM train_stop s JOIN train_run r ON r.train_id = s.train_id WHERE r.id = #{runId}
+    </select>
+    <select id="countTrainSeats" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM train_seat s JOIN train_coach c ON c.id = s.coach_id
+        JOIN train_run r ON r.train_id = c.train_id WHERE r.id = #{runId}
+    </select>
+    <insert id="insertMissingSegmentInventory">
+        INSERT IGNORE INTO seat_segment_inventory
+        (run_id, seat_id, segment_seq, status, created_at, updated_at)
+        SELECT r.id, s.id, stop.stop_seq, 'AVAILABLE', NOW(), NOW()
+        FROM train_run r
+        JOIN train_coach c ON c.train_id = r.train_id
+        JOIN train_seat s ON s.coach_id = c.id
+        JOIN train_stop stop ON stop.train_id = r.train_id
+        WHERE r.id = #{runId}
+        AND stop.stop_seq &lt; (SELECT MAX(last_stop.stop_seq) FROM train_stop last_stop
+        WHERE last_stop.train_id = r.train_id)
+    </insert>
+    <select id="countInventoryRows" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM seat_segment_inventory WHERE run_id = #{runId}
+    </select>
+    <update id="markInventoryInitialized">
+        UPDATE train_run SET inventory_initialized = 1, inventory_initialized_at = NOW(), updated_at = NOW()
+        WHERE id = #{runId}
+    </update>
+    <select id="selectInventorySummary" resultType="com.example.railgo.data.vo.InventorySummaryResponse">
+        SELECT st.id AS seat_type_id, st.code AS seat_type_code, st.name AS seat_type_name,
+        COUNT(i.id) AS total_segment_count,
+        SUM(i.status = 'AVAILABLE') AS available_segment_count,
+        SUM(i.status = 'LOCKED') AS locked_segment_count,
+        SUM(i.status = 'SOLD') AS sold_segment_count
+        FROM seat_segment_inventory i
+        JOIN train_seat s ON s.id = i.seat_id
+        JOIN train_coach c ON c.id = s.coach_id
+        JOIN seat_type st ON st.id = c.seat_type_id
+        WHERE i.run_id = #{runId}
+        GROUP BY st.id, st.code, st.name, st.sort_no
+        ORDER BY st.sort_no
+    </select>
+    <select id="selectCandidateSeats" resultType="com.example.railgo.data.vo.row.CandidateSeatRow">
+        SELECT s.id AS seat_id, c.coach_no, s.seat_no, s.seat_letter
+        FROM train_seat s
+        JOIN train_coach c ON c.id = s.coach_id
+        JOIN seat_segment_inventory i ON i.seat_id = s.id AND i.run_id = #{runId}
+        AND i.segment_seq &gt;= #{fromSeq} AND i.segment_seq &lt; #{toSeq}
+        WHERE c.seat_type_id = #{seatTypeId}
+        GROUP BY s.id, c.coach_no, s.seat_no, s.seat_letter
+        HAVING COUNT(*) = #{toSeq} - #{fromSeq}
+        AND SUM(i.status = 'AVAILABLE') = #{toSeq} - #{fromSeq}
+        ORDER BY CASE
+        WHEN #{seatPreference} = 'WINDOW' AND s.seat_letter IN ('A', 'F') THEN 0
+        WHEN #{seatPreference} = 'AISLE' AND s.seat_letter IN ('C', 'D') THEN 0
+        ELSE 1 END, c.coach_no, s.seat_no
+        LIMIT #{limit}
+    </select>
+    <select id="selectSeatSegmentsForUpdate" resultType="com.example.railgo.data.vo.row.SegmentLockRow">
+        SELECT id, segment_seq, status, order_item_id
+        FROM seat_segment_inventory
+        WHERE run_id = #{runId} AND seat_id = #{seatId}
+        AND segment_seq &gt;= #{fromSeq} AND segment_seq &lt; #{toSeq}
+        ORDER BY segment_seq
+        FOR UPDATE
+    </select>
+    <update id="lockSeatSegments">
+        UPDATE seat_segment_inventory
+        SET status = 'LOCKED', order_item_id = #{orderItemId}, lock_expire_at = #{expireAt},
+        version = version + 1, updated_at = NOW()
+        WHERE run_id = #{runId} AND seat_id = #{seatId}
+        AND segment_seq &gt;= #{fromSeq} AND segment_seq &lt; #{toSeq}
+        AND status = 'AVAILABLE'
+    </update>
+</mapper>
