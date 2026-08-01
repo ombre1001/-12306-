@@ -33,7 +33,7 @@
         WHERE tr.run_date = #{query.travelDate}
         AND tr.sale_status = 'ON_SALE'
         AND tr.inventory_initialized = 1
-        AND t.status = 'ENABLED'
+        AND t.status = 'ACTIVE'
         <if test="query.trainTypes != null and !query.trainTypes.isEmpty()">
             AND t.train_type IN
             <foreach collection="query.trainTypes" item="trainType" open="(" separator="," close=")">
@@ -53,40 +53,117 @@
         </choose>
     </select>
 
-    <select id="selectFareAvailability" resultType="com.example.railgo.data.vo.row.FareAvailabilityRow">
-        WITH route_info AS (
-        SELECT tr.id AS run_id, tr.train_id, fs.stop_seq AS from_seq, ts.stop_seq AS to_seq
-        FROM train_run tr
-        JOIN train_stop fs ON fs.train_id = tr.train_id AND fs.station_id = #{fromStationId}
-        JOIN train_stop ts ON ts.train_id = tr.train_id AND ts.station_id = #{toStationId}
-        AND ts.stop_seq > fs.stop_seq
-        WHERE tr.id IN
-        <foreach collection="runIds" item="runId" open="(" separator="," close=")">#{runId}</foreach>
-        ), available_seat AS (
-        SELECT route.run_id, coach.seat_type_id, inventory.seat_id
-        FROM route_info route
-        JOIN train_coach coach ON coach.train_id = route.train_id
-        JOIN train_seat seat ON seat.coach_id = coach.id
-        JOIN seat_segment_inventory inventory
-        ON inventory.run_id = route.run_id AND inventory.seat_id = seat.id
-        AND inventory.segment_seq &gt;= route.from_seq AND inventory.segment_seq &lt; route.to_seq
-        GROUP BY route.run_id, coach.seat_type_id, inventory.seat_id, route.from_seq, route.to_seq
-        HAVING COUNT(*) = route.to_seq - route.from_seq
-        AND SUM(inventory.status = 'AVAILABLE') = route.to_seq - route.from_seq
-        ), available_count AS (
-        SELECT run_id, seat_type_id, COUNT(*) AS available_count
-        FROM available_seat GROUP BY run_id, seat_type_id
-        )
-        SELECT route.run_id, seat_type.id AS seat_type_id, seat_type.code AS seat_type_code,
-        seat_type.name AS seat_type_name, fare.price,
+    <select id="selectFareAvailability"
+            resultType="com.example.railgo.data.vo.row.FareAvailabilityRow">
+
+        SELECT
+        route.run_id,
+        seat_type.id AS seat_type_id,
+        seat_type.code AS seat_type_code,
+        seat_type.name AS seat_type_name,
+        fare.price,
         COALESCE(available.available_count, 0) AS available_count
-        FROM route_info route
-        JOIN train_fare fare ON fare.train_id = route.train_id
-        AND fare.from_seq = route.from_seq AND fare.to_seq = route.to_seq
-        JOIN seat_type ON seat_type.id = fare.seat_type_id AND seat_type.enabled = 1
-        LEFT JOIN available_count available ON available.run_id = route.run_id
+        FROM (
+        SELECT
+        tr.id AS run_id,
+        tr.train_id,
+        fs.stop_seq AS from_seq,
+        ts.stop_seq AS to_seq
+        FROM train_run tr
+        JOIN train_stop fs
+        ON fs.train_id = tr.train_id
+        AND fs.station_id = #{fromStationId}
+        JOIN train_stop ts
+        ON ts.train_id = tr.train_id
+        AND ts.station_id = #{toStationId}
+        AND ts.stop_seq &gt; fs.stop_seq
+        WHERE tr.id IN
+        <foreach collection="runIds"
+                 item="runId"
+                 open="("
+                 separator=","
+                 close=")">
+            #{runId}
+        </foreach>
+        ) route
+
+        JOIN train_fare fare
+        ON fare.train_id = route.train_id
+        AND fare.from_seq = route.from_seq
+        AND fare.to_seq = route.to_seq
+
+        JOIN seat_type
+        ON seat_type.id = fare.seat_type_id
+
+        LEFT JOIN (
+        SELECT
+        seat_available.run_id,
+        seat_available.seat_type_id,
+        COUNT(*) AS available_count
+        FROM (
+        SELECT
+        tr.id AS run_id,
+        coach.seat_type_id,
+        seat.id AS seat_id
+        FROM train_run tr
+
+        JOIN train_stop fs
+        ON fs.train_id = tr.train_id
+        AND fs.station_id = #{fromStationId}
+
+        JOIN train_stop ts
+        ON ts.train_id = tr.train_id
+        AND ts.station_id = #{toStationId}
+        AND ts.stop_seq &gt; fs.stop_seq
+
+        JOIN train_coach coach
+        ON coach.train_id = tr.train_id
+
+        JOIN train_seat seat
+        ON seat.coach_id = coach.id
+
+        JOIN seat_segment_inventory inventory
+        ON inventory.run_id = tr.id
+        AND inventory.seat_id = seat.id
+        AND inventory.segment_seq &gt;= fs.stop_seq
+        AND inventory.segment_seq &lt; ts.stop_seq
+
+        WHERE tr.id IN
+        <foreach collection="runIds"
+                 item="runId"
+                 open="("
+                 separator=","
+                 close=")">
+            #{runId}
+        </foreach>
+
+        GROUP BY
+        tr.id,
+        coach.seat_type_id,
+        seat.id,
+        fs.stop_seq,
+        ts.stop_seq
+
+        HAVING COUNT(DISTINCT inventory.segment_seq)
+        = MAX(ts.stop_seq) - MAX(fs.stop_seq)
+        AND COUNT(
+        DISTINCT CASE
+        WHEN inventory.status = 'AVAILABLE'
+        THEN inventory.segment_seq
+        END
+        ) = MAX(ts.stop_seq) - MAX(fs.stop_seq)
+        ) seat_available
+
+        GROUP BY
+        seat_available.run_id,
+        seat_available.seat_type_id
+        ) available
+        ON available.run_id = route.run_id
         AND available.seat_type_id = fare.seat_type_id
-        ORDER BY route.run_id, seat_type.sort_no
+
+        ORDER BY
+        route.run_id,
+        seat_type.sort_no
     </select>
 
     <select id="selectBookingRoute" resultType="com.example.railgo.data.vo.row.BookingRouteRow">
@@ -103,7 +180,10 @@
     </select>
 
     <select id="selectSeatTypeIdByCode" resultType="java.lang.Long">
-        SELECT id FROM seat_type WHERE code = #{seatTypeCode} AND enabled = 1 LIMIT 1
+        SELECT id
+        FROM seat_type
+        WHERE code = #{seatTypeCode}
+        LIMIT 1
     </select>
     <select id="selectSeatTypeNameById" resultType="java.lang.String">
         SELECT name FROM seat_type WHERE id = #{seatTypeId} LIMIT 1
