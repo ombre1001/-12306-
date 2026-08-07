@@ -14,4 +14,199 @@
         LIMIT 1
     </select>
 
+    <select id="selectByIdAndUserId" resultType="com.example.railgo.data.po.TicketOrder">
+        SELECT *
+        FROM ticket_order
+        WHERE id = #{orderId} AND user_id = #{userId}
+        LIMIT 1
+    </select>
+
+    <select id="selectByIdAndUserIdForUpdate" resultType="com.example.railgo.data.po.TicketOrder">
+        SELECT *
+        FROM ticket_order
+        WHERE id = #{orderId} AND user_id = #{userId}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <select id="selectOwnedPassengersForUpdate"
+            resultType="com.example.railgo.data.po.Passenger">
+        SELECT *
+        FROM passenger
+        WHERE user_id = #{userId}
+          AND id IN
+        <foreach collection="passengerIds" item="passengerId" open="(" separator="," close=")">
+            #{passengerId}
+        </foreach>
+        ORDER BY id
+        FOR UPDATE
+    </select>
+
+    <select id="selectOrderPage" resultType="com.example.railgo.data.vo.OrderSummaryResponse">
+        SELECT
+            orders.id AS order_id,
+            orders.order_no,
+            orders.status,
+            orders.total_amount,
+            orders.expire_at,
+            orders.created_at,
+            MIN(run.run_date) AS first_travel_date,
+            GROUP_CONCAT(DISTINCT train.train_no ORDER BY
+                TIMESTAMP(DATE_ADD(run.run_date, INTERVAL from_stop.departure_day_offset DAY),
+                          from_stop.departure_time) SEPARATOR '/') AS train_nos,
+            SUBSTRING_INDEX(GROUP_CONCAT(from_station.name ORDER BY
+                TIMESTAMP(DATE_ADD(run.run_date, INTERVAL from_stop.departure_day_offset DAY),
+                          from_stop.departure_time) SEPARATOR ','), ',', 1)
+                AS from_station_name,
+            SUBSTRING_INDEX(GROUP_CONCAT(to_station.name ORDER BY
+                TIMESTAMP(DATE_ADD(run.run_date, INTERVAL to_stop.arrival_day_offset DAY),
+                          to_stop.arrival_time) DESC SEPARATOR ','), ',', 1)
+                AS to_station_name,
+            COUNT(DISTINCT item.passenger_id) AS passenger_count,
+            COUNT(item.id) AS ticket_count
+        FROM ticket_order orders
+        JOIN order_item item ON item.order_id = orders.id
+        JOIN train_run run ON run.id = item.run_id
+        JOIN train ON train.id = run.train_id
+        JOIN train_stop from_stop ON from_stop.train_id = run.train_id AND from_stop.stop_seq = item.from_seq
+        JOIN train_stop to_stop ON to_stop.train_id = run.train_id AND to_stop.stop_seq = item.to_seq
+        JOIN station from_station ON from_station.id = item.from_station_id
+        JOIN station to_station ON to_station.id = item.to_station_id
+        WHERE orders.user_id = #{userId}
+        <if test="status != null and status != ''">
+            AND orders.status = #{status}
+        </if>
+        <if test="orderDateFrom != null">
+            AND orders.created_at &gt;= #{orderDateFrom}
+        </if>
+        <if test="orderDateTo != null">
+            AND orders.created_at &lt; DATE_ADD(#{orderDateTo}, INTERVAL 1 DAY)
+        </if>
+        <if test="travelDateFrom != null or travelDateTo != null">
+            AND EXISTS (
+                SELECT 1
+                FROM order_item date_item
+                JOIN train_run date_run ON date_run.id = date_item.run_id
+                WHERE date_item.order_id = orders.id
+                <if test="travelDateFrom != null">
+                  AND date_run.run_date &gt;= #{travelDateFrom}
+                </if>
+                <if test="travelDateTo != null">
+                  AND date_run.run_date &lt;= #{travelDateTo}
+                </if>
+            )
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (orders.order_no LIKE CONCAT('%', #{keyword}, '%') OR EXISTS (
+                SELECT 1
+                FROM order_item keyword_item
+                JOIN passenger keyword_passenger ON keyword_passenger.id = keyword_item.passenger_id
+                JOIN train_run keyword_run ON keyword_run.id = keyword_item.run_id
+                JOIN train keyword_train ON keyword_train.id = keyword_run.train_id
+                JOIN station keyword_from_station ON keyword_from_station.id = keyword_item.from_station_id
+                JOIN station keyword_to_station ON keyword_to_station.id = keyword_item.to_station_id
+                WHERE keyword_item.order_id = orders.id
+                  AND (
+                    keyword_train.train_no LIKE CONCAT('%', #{keyword}, '%')
+                    OR keyword_from_station.name LIKE CONCAT('%', #{keyword}, '%')
+                    OR keyword_to_station.name LIKE CONCAT('%', #{keyword}, '%')
+                    OR keyword_passenger.name LIKE CONCAT('%', #{keyword}, '%')
+                  )
+            )
+            )
+        </if>
+        GROUP BY orders.id, orders.order_no, orders.status, orders.total_amount,
+                 orders.expire_at, orders.created_at
+        ORDER BY orders.created_at DESC, orders.id DESC
+    </select>
+
+    <select id="selectOrderItemDetails"
+            resultType="com.example.railgo.data.vo.OrderItemDetailResponse">
+        SELECT
+            item.id AS order_item_id,
+            item.passenger_id,
+            passenger.name AS passenger_name,
+            item.run_id,
+            run.run_date,
+            train.train_no,
+            item.from_station_id,
+            from_station.name AS from_station_name,
+            item.to_station_id,
+            to_station.name AS to_station_name,
+            TIMESTAMP(DATE_ADD(run.run_date, INTERVAL from_stop.departure_day_offset DAY),
+                      from_stop.departure_time) AS departure_date_time,
+            TIMESTAMP(DATE_ADD(run.run_date, INTERVAL to_stop.arrival_day_offset DAY),
+                      to_stop.arrival_time) AS arrival_date_time,
+            seat_type.code AS seat_type_code,
+            seat_type.name AS seat_type_name,
+            coach.coach_no,
+            seat.seat_no,
+            item.price,
+            item.status
+        FROM order_item item
+        JOIN passenger ON passenger.id = item.passenger_id
+        JOIN train_run run ON run.id = item.run_id
+        JOIN train ON train.id = run.train_id
+        JOIN station from_station ON from_station.id = item.from_station_id
+        JOIN station to_station ON to_station.id = item.to_station_id
+        JOIN train_stop from_stop ON from_stop.train_id = run.train_id AND from_stop.stop_seq = item.from_seq
+        JOIN train_stop to_stop ON to_stop.train_id = run.train_id AND to_stop.stop_seq = item.to_seq
+        JOIN seat_type ON seat_type.id = item.seat_type_id
+        LEFT JOIN train_seat seat ON seat.id = item.seat_id
+        LEFT JOIN train_coach coach ON coach.id = seat.coach_id
+        WHERE item.order_id = #{orderId}
+        ORDER BY departure_date_time, item.passenger_id, item.id
+    </select>
+
+    <select id="selectPaymentStatus"
+            resultType="com.example.railgo.data.vo.OrderPaymentStatusResponse">
+        SELECT orders.id AS order_id, orders.order_no, orders.status AS order_status,
+               payment.payment_no, COALESCE(payment.status, 'NOT_CREATED') AS payment_status,
+               payment.channel, payment.amount, payment.paid_at, payment.created_at
+        FROM ticket_order orders
+        LEFT JOIN payment_record payment ON payment.id = (
+            SELECT MAX(latest.id) FROM payment_record latest WHERE latest.order_id = orders.id
+        )
+        WHERE orders.id = #{orderId} AND orders.user_id = #{userId}
+        LIMIT 1
+    </select>
+
+    <select id="countPassengerTravelConflict" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM order_item item
+        JOIN ticket_order orders ON orders.id = item.order_id
+        JOIN train_run run ON run.id = item.run_id
+        JOIN train_stop from_stop ON from_stop.train_id = run.train_id AND from_stop.stop_seq = item.from_seq
+        JOIN train_stop to_stop ON to_stop.train_id = run.train_id AND to_stop.stop_seq = item.to_seq
+        WHERE orders.user_id = #{userId}
+          AND item.passenger_id = #{passengerId}
+          AND orders.status IN ('PENDING_PAYMENT', 'PAID')
+          AND (orders.status &lt;&gt; 'PENDING_PAYMENT' OR orders.expire_at &gt; NOW())
+          AND item.status IN ('LOCKED', 'ISSUED')
+          AND #{departureDateTime} &lt;
+              TIMESTAMP(DATE_ADD(run.run_date, INTERVAL to_stop.arrival_day_offset DAY), to_stop.arrival_time)
+          AND #{arrivalDateTime} &gt;
+              TIMESTAMP(DATE_ADD(run.run_date, INTERVAL from_stop.departure_day_offset DAY), from_stop.departure_time)
+    </select>
+
+    <select id="selectExpiredOrderIds" resultType="java.lang.Long">
+        SELECT id
+        FROM ticket_order
+        WHERE status = 'PENDING_PAYMENT' AND expire_at &lt;= NOW()
+        ORDER BY expire_at
+        LIMIT #{limit}
+    </select>
+
+    <update id="updateStatusIfExpected">
+        UPDATE ticket_order
+        SET status = #{newStatus}, updated_at = NOW()
+        WHERE id = #{orderId} AND status = #{expectedStatus}
+    </update>
+
+    <update id="cancelLockedItems">
+        UPDATE order_item
+        SET status = 'CANCELLED', updated_at = NOW()
+        WHERE order_id = #{orderId} AND status = 'LOCKED'
+    </update>
+
 </mapper>

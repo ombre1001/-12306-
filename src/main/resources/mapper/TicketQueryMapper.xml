@@ -490,6 +490,43 @@
         ORDER BY train_stop.stop_seq ASC
     </select>
 
+    <select id="selectBookingRouteForUpdate"
+            resultType="com.example.railgo.data.vo.row.BookingRouteRow">
+        SELECT
+        tr.id AS run_id,
+        tr.train_id,
+        tr.sale_status,
+        tr.inventory_initialized,
+        t.train_no,
+        from_stop.station_id AS from_station_id,
+        to_stop.station_id AS to_station_id,
+        from_stop.stop_seq AS from_seq,
+        to_stop.stop_seq AS to_seq,
+        TIMESTAMP(
+            DATE_ADD(tr.run_date, INTERVAL from_stop.departure_day_offset DAY),
+            from_stop.departure_time
+        ) AS departure_date_time,
+        TIMESTAMP(
+            DATE_ADD(tr.run_date, INTERVAL to_stop.arrival_day_offset DAY),
+            to_stop.arrival_time
+        ) AS arrival_date_time
+        FROM train_run tr
+        INNER JOIN train t
+        ON t.id = tr.train_id
+        INNER JOIN train_stop from_stop
+        ON from_stop.train_id = tr.train_id
+        AND from_stop.station_id = #{fromStationId}
+        INNER JOIN train_stop to_stop
+        ON to_stop.train_id = tr.train_id
+        AND to_stop.station_id = #{toStationId}
+        WHERE tr.id = #{runId}
+        AND from_stop.stop_seq &lt; to_stop.stop_seq
+        AND from_stop.departure_time IS NOT NULL
+        AND to_stop.arrival_time IS NOT NULL
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
 
     <!-- ==================== 检查运行实例是否存在 ==================== -->
 

@@ -56,4 +56,8 @@ public interface InventoryMapper {
     int releaseOrderItemSegments(
             @Param("orderItemId") Long orderItemId
     );
+
+    int releaseOrderSegments(
+            @Param("orderId") Long orderId
+    );
 }

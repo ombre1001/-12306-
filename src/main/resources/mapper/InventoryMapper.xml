@@ -77,4 +77,27 @@
         AND segment_seq &gt;= #{fromSeq} AND segment_seq &lt; #{toSeq}
         AND status = 'AVAILABLE'
     </update>
+    <update id="releaseOrderItemSegments">
+        UPDATE seat_segment_inventory
+        SET status = 'AVAILABLE',
+        order_item_id = NULL,
+        lock_expire_at = NULL,
+        version = version + 1,
+        updated_at = NOW()
+        WHERE order_item_id = #{orderItemId}
+        AND status = 'LOCKED'
+    </update>
+
+    <update id="releaseOrderSegments">
+        UPDATE seat_segment_inventory inventory
+        INNER JOIN order_item item
+        ON item.id = inventory.order_item_id
+        SET inventory.status = 'AVAILABLE',
+        inventory.order_item_id = NULL,
+        inventory.lock_expire_at = NULL,
+        inventory.version = inventory.version + 1,
+        inventory.updated_at = NOW()
+        WHERE item.order_id = #{orderId}
+        AND inventory.status = 'LOCKED'
+    </update>
 </mapper>

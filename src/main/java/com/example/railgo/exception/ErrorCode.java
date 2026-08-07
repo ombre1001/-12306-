@@ -37,6 +37,8 @@ public enum ErrorCode {
     FARE_NOT_FOUND(40414, HttpStatus.NOT_FOUND, "该区间尚未配置票价"),
 
     DUPLICATE_CLIENT_REQUEST(40901, HttpStatus.CONFLICT, "请勿重复提交订单"),
+    ORDER_STATUS_INVALID(40902, HttpStatus.CONFLICT, "当前订单状态不允许执行此操作"),
+    PASSENGER_TRAVEL_CONFLICT(40903, HttpStatus.CONFLICT, "乘车人存在时间冲突的行程"),
     DUPLICATE_PASSENGER(40904, HttpStatus.CONFLICT, "同一订单不能重复选择乘车人"),
     PASSENGER_NOT_OWNED(40302, HttpStatus.FORBIDDEN, "乘车人不存在或不属于当前用户"),
     INVENTORY_NOT_INITIALIZED(40911, HttpStatus.CONFLICT, "该运行实例尚未初始化库存"),
@@ -61,6 +63,7 @@ public enum ErrorCode {
     ORDER_CREATE_FAILED(50012, HttpStatus.INTERNAL_SERVER_ERROR, "订单创建失败"),
     ORDER_ITEM_CREATE_FAILED(50013, HttpStatus.INTERNAL_SERVER_ERROR, "订单明细创建失败"),
     ORDER_ITEM_UPDATE_FAILED(50014, HttpStatus.INTERNAL_SERVER_ERROR, "订单明细更新失败"),
+    ORDER_CANCEL_FAILED(50015, HttpStatus.INTERNAL_SERVER_ERROR, "订单取消失败"),
 
     // 管理端车站
     STATION_NOT_FOUND(40421, HttpStatus.NOT_FOUND, "车站不存在"),

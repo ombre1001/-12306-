@@ -2,6 +2,8 @@ package com.example.railgo.data.vo.row;
 
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 @Data
 public class BookingRouteRow {
 
@@ -22,4 +24,8 @@ public class BookingRouteRow {
     private Integer fromSeq;
 
     private Integer toSeq;
+
+    private LocalDateTime departureDateTime;
+
+    private LocalDateTime arrivalDateTime;
 }

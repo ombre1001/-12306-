@@ -58,4 +58,10 @@ public interface TicketQueryMapper {
             @Param("toSeq") Integer toSeq,
             @Param("seatTypeId") Long seatTypeId
     );
+
+    BookingRouteRow selectBookingRouteForUpdate(
+            @Param("runId") Long runId,
+            @Param("fromStationId") Long fromStationId,
+            @Param("toStationId") Long toStationId
+    );
 }

@@ -7,24 +7,20 @@ import lombok.Data;
 import java.util.List;
 
 @Data
-public class CreateOrderRequest {
+public class CreateTransferOrderRequest {
 
-    @NotNull(message = "运行实例ID不能为空")
-    @Positive(message = "运行实例ID必须大于0")
-    private Long runId;
+    @Valid
+    @NotNull(message = "第一程不能为空")
+    private TransferOrderLegRequest firstLeg;
 
-    @NotNull(message = "出发站不能为空")
-    @Positive(message = "出发站ID必须大于0")
-    private Long fromStationId;
-
-    @NotNull(message = "到达站不能为空")
-    @Positive(message = "到达站ID必须大于0")
-    private Long toStationId;
+    @Valid
+    @NotNull(message = "第二程不能为空")
+    private TransferOrderLegRequest secondLeg;
 
     @Valid
     @NotEmpty(message = "至少选择一名乘车人")
-    @Size(max = 5, message = "一次最多购买5张车票")
-    private List<OrderPassengerRequest> items;
+    @Size(max = 5, message = "一次最多购买5名乘车人的换乘票")
+    private List<TransferOrderPassengerRequest> items;
 
     @NotBlank(message = "clientRequestId不能为空")
     @Size(max = 64, message = "clientRequestId长度不能超过64")
