@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.*;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -644,6 +645,245 @@ public class AdminTrainService {
                     ErrorCode.TRAIN_NO_EXISTS
             );
         }
+    }
+
+    private SeatType findSeatTypeByCode(String code) {
+        SeatType seatType = seatTypeMapper.selectOne(
+                Wrappers.<SeatType>lambdaQuery()
+                        .eq(SeatType::getCode, code)
+                        .last("LIMIT 1")
+        );
+
+        if (seatType == null) {
+            throw new BusinessException(
+                    ErrorCode.SEAT_TYPE_NOT_FOUND,
+                    "席别不存在：" + code
+            );
+        }
+
+        return seatType;
+    }
+
+    private LinkedHashSet<String> normalizeSeatLetters(
+            List<String> seatLetters
+    ) {
+        LinkedHashSet<String> letters = seatLetters.stream()
+                .map(String::trim)
+                .map(value -> value.toUpperCase(Locale.ROOT))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        if (letters.size() != seatLetters.size()) {
+            throw new BusinessException(
+                    ErrorCode.SEAT_TEMPLATE_INVALID,
+                    "座位字母不能重复"
+            );
+        }
+
+        return letters;
+    }
+
+    /**
+     * 根据座位排列自动判断席别。
+     *
+     * 一等座：A、C、D、F
+     * 二等座：A、B、C、D、F
+     */
+    private SeatType resolveSeatType(
+            String coachNo,
+            Set<String> letters,
+            SeatType firstClassSeatType,
+            SeatType secondClassSeatType
+    ) {
+        Set<String> firstClassLetters =
+                Set.of("A", "C", "D", "F");
+
+        Set<String> secondClassLetters =
+                Set.of("A", "B", "C", "D", "F");
+
+        if (letters.equals(firstClassLetters)) {
+            return firstClassSeatType;
+        }
+
+        if (letters.equals(secondClassLetters)) {
+            return secondClassSeatType;
+        }
+
+        throw new BusinessException(
+                ErrorCode.SEAT_TEMPLATE_INVALID,
+                "车厢" + coachNo
+                        + "的座位排列无法识别席别，"
+                        + "一等座应为[A,C,D,F]，"
+                        + "二等座应为[A,B,C,D,F]"
+        );
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public AdminAllTrainSeatInitResult initializeAllTrainSeats(
+            AdminAllTrainSeatInitRequest request
+    ) {
+        boolean overwrite = Boolean.TRUE.equals(request.overwrite());
+
+        /*
+         * 先校验所有模板，并提前加载席别。
+         */
+        SeatType firstClassSeatType = findSeatTypeByCode("FIRST");
+        SeatType secondClassSeatType = findSeatTypeByCode("SECOND");
+
+        Set<String> coachNoSet = new HashSet<>();
+
+        for (AdminAllTrainSeatInitRequest.CoachTemplate template
+                : request.templates()) {
+
+            String coachNo = template.coachNo().trim();
+
+            if (!coachNoSet.add(coachNo)) {
+                throw new BusinessException(
+                        ErrorCode.COACH_DUPLICATED,
+                        "车厢号重复：" + coachNo
+                );
+            }
+
+            if (template.startRow() > template.endRow()) {
+                throw new BusinessException(
+                        ErrorCode.SEAT_TEMPLATE_INVALID,
+                        "车厢" + coachNo + "的起始排不能大于结束排"
+                );
+            }
+
+            LinkedHashSet<String> letters =
+                    normalizeSeatLetters(template.seatLetters());
+
+            resolveSeatType(
+                    coachNo,
+                    letters,
+                    firstClassSeatType,
+                    secondClassSeatType
+            );
+        }
+
+        List<Train> trains = trainMapper.selectList(
+                Wrappers.<Train>lambdaQuery()
+                        .orderByAsc(Train::getId)
+        );
+
+        int initializedTrainCount = 0;
+        int skippedTrainCount = 0;
+        int generatedCoachCount = 0;
+        int generatedSeatCount = 0;
+
+        for (Train train : trains) {
+            Long trainId = train.getId();
+
+            List<TrainCoach> oldCoaches =
+                    trainCoachMapper.selectList(
+                            Wrappers.<TrainCoach>lambdaQuery()
+                                    .eq(TrainCoach::getTrainId, trainId)
+                    );
+
+            /*
+             * overwrite=false 时，跳过已有车厢的车次。
+             */
+            if (!oldCoaches.isEmpty() && !overwrite) {
+                skippedTrainCount++;
+                continue;
+            }
+
+            /*
+             * 检查车次是否已经开售或已经初始化库存。
+             */
+            ensureStructureEditable(trainId);
+
+            /*
+             * overwrite=true 时删除旧座位和旧车厢。
+             */
+            if (!oldCoaches.isEmpty()) {
+                List<Long> coachIds = oldCoaches.stream()
+                        .map(TrainCoach::getId)
+                        .toList();
+
+                trainSeatMapper.delete(
+                        Wrappers.<TrainSeat>lambdaQuery()
+                                .in(TrainSeat::getCoachId, coachIds)
+                );
+
+                trainCoachMapper.delete(
+                        Wrappers.<TrainCoach>lambdaQuery()
+                                .eq(TrainCoach::getTrainId, trainId)
+                );
+            }
+
+            for (AdminAllTrainSeatInitRequest.CoachTemplate template
+                    : request.templates()) {
+
+                String coachNo = template.coachNo().trim();
+
+                LinkedHashSet<String> letters =
+                        normalizeSeatLetters(template.seatLetters());
+
+                SeatType seatType = resolveSeatType(
+                        coachNo,
+                        letters,
+                        firstClassSeatType,
+                        secondClassSeatType
+                );
+
+                int capacity =
+                        (template.endRow() - template.startRow() + 1)
+                                * letters.size();
+
+                TrainCoach coach = new TrainCoach();
+                coach.setTrainId(trainId);
+                coach.setCoachNo(coachNo);
+                coach.setSeatTypeId(seatType.getId());
+                coach.setCapacity(capacity);
+
+                if (trainCoachMapper.insert(coach) != 1) {
+                    throw new IllegalStateException(
+                            "车厢保存失败，trainId=" + trainId
+                                    + "，coachNo=" + coachNo
+                    );
+                }
+
+                generatedCoachCount++;
+
+                for (int row = template.startRow();
+                     row <= template.endRow();
+                     row++) {
+
+                    for (String letter : letters) {
+                        TrainSeat seat = new TrainSeat();
+
+                        seat.setCoachId(coach.getId());
+                        seat.setRowNo(row);
+                        seat.setSeatLetter(letter);
+                        seat.setSeatNo(
+                                String.format("%02d%s", row, letter)
+                        );
+                        seat.setEnabled(true);
+
+                        if (trainSeatMapper.insert(seat) != 1) {
+                            throw new IllegalStateException(
+                                    "座位生成失败，trainId=" + trainId
+                                            + "，coachNo=" + coachNo
+                                            + "，seatNo=" + seat.getSeatNo()
+                            );
+                        }
+
+                        generatedSeatCount++;
+                    }
+                }
+            }
+
+            initializedTrainCount++;
+        }
+
+        return new AdminAllTrainSeatInitResult(
+                trains.size(),
+                initializedTrainCount,
+                skippedTrainCount,
+                generatedCoachCount,
+                generatedSeatCount
+        );
     }
 
     private void ensureStructureEditable(Long trainId) {

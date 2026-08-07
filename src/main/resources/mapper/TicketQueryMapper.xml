@@ -166,6 +166,340 @@
         seat_type.sort_no
     </select>
 
+    <!-- ==================== 一次换乘候选查询 ==================== -->
+
+    <select id="selectTransferCandidates"
+            resultType="com.example.railgo.data.vo.row.TransferCandidateRow">
+
+        SELECT DISTINCT
+        transfer_station.id AS transfer_station_id,
+        transfer_station.station_code AS transfer_station_code,
+        transfer_station.name AS transfer_station,
+
+        first_run.id AS first_run_id,
+        first_train.train_no AS first_train_no,
+        first_train.train_type AS first_train_type,
+        first_origin_station.name AS first_origin_station,
+        first_terminal_station.name AS first_terminal_station,
+        first_from_station.name AS first_from_station,
+        transfer_station.name AS first_to_station,
+        first_from_stop.stop_seq AS first_from_seq,
+        first_transfer_stop.stop_seq AS first_to_seq,
+
+        TIMESTAMP(
+        DATE_ADD(
+        first_run.run_date,
+        INTERVAL first_from_stop.departure_day_offset DAY
+        ),
+        first_from_stop.departure_time
+        ) AS first_departure_date_time,
+
+        TIMESTAMP(
+        DATE_ADD(
+        first_run.run_date,
+        INTERVAL first_transfer_stop.arrival_day_offset DAY
+        ),
+        first_transfer_stop.arrival_time
+        ) AS first_arrival_date_time,
+
+        TIMESTAMPDIFF(
+        MINUTE,
+        TIMESTAMP(
+        DATE_ADD(
+        first_run.run_date,
+        INTERVAL first_from_stop.departure_day_offset DAY
+        ),
+        first_from_stop.departure_time
+        ),
+        TIMESTAMP(
+        DATE_ADD(
+        first_run.run_date,
+        INTERVAL first_transfer_stop.arrival_day_offset DAY
+        ),
+        first_transfer_stop.arrival_time
+        )
+        ) AS first_duration_minutes,
+
+        second_run.id AS second_run_id,
+        second_train.train_no AS second_train_no,
+        second_train.train_type AS second_train_type,
+        second_origin_station.name AS second_origin_station,
+        second_terminal_station.name AS second_terminal_station,
+        transfer_station.name AS second_from_station,
+        second_to_station.name AS second_to_station,
+        second_transfer_stop.stop_seq AS second_from_seq,
+        second_to_stop.stop_seq AS second_to_seq,
+
+        TIMESTAMP(
+        DATE_ADD(
+        second_run.run_date,
+        INTERVAL second_transfer_stop.departure_day_offset DAY
+        ),
+        second_transfer_stop.departure_time
+        ) AS second_departure_date_time,
+
+        TIMESTAMP(
+        DATE_ADD(
+        second_run.run_date,
+        INTERVAL second_to_stop.arrival_day_offset DAY
+        ),
+        second_to_stop.arrival_time
+        ) AS second_arrival_date_time,
+
+        TIMESTAMPDIFF(
+        MINUTE,
+        TIMESTAMP(
+        DATE_ADD(
+        second_run.run_date,
+        INTERVAL second_transfer_stop.departure_day_offset DAY
+        ),
+        second_transfer_stop.departure_time
+        ),
+        TIMESTAMP(
+        DATE_ADD(
+        second_run.run_date,
+        INTERVAL second_to_stop.arrival_day_offset DAY
+        ),
+        second_to_stop.arrival_time
+        )
+        ) AS second_duration_minutes,
+
+        TIMESTAMPDIFF(
+        MINUTE,
+        TIMESTAMP(
+        DATE_ADD(
+        first_run.run_date,
+        INTERVAL first_transfer_stop.arrival_day_offset DAY
+        ),
+        first_transfer_stop.arrival_time
+        ),
+        TIMESTAMP(
+        DATE_ADD(
+        second_run.run_date,
+        INTERVAL second_transfer_stop.departure_day_offset DAY
+        ),
+        second_transfer_stop.departure_time
+        )
+        ) AS wait_minutes,
+
+        TIMESTAMPDIFF(
+        MINUTE,
+        TIMESTAMP(
+        DATE_ADD(
+        first_run.run_date,
+        INTERVAL first_from_stop.departure_day_offset DAY
+        ),
+        first_from_stop.departure_time
+        ),
+        TIMESTAMP(
+        DATE_ADD(
+        second_run.run_date,
+        INTERVAL second_to_stop.arrival_day_offset DAY
+        ),
+        second_to_stop.arrival_time
+        )
+        ) AS total_duration_minutes
+
+        FROM train_run first_run
+
+        JOIN train first_train
+        ON first_train.id = first_run.train_id
+        AND first_train.status = 'ACTIVE'
+
+        JOIN train_stop first_from_stop
+        ON first_from_stop.train_id = first_train.id
+        AND first_from_stop.station_id = #{query.fromStationId}
+
+        JOIN station first_from_station
+        ON first_from_station.id = first_from_stop.station_id
+
+        JOIN train_stop first_transfer_stop
+        ON first_transfer_stop.train_id = first_train.id
+        AND first_transfer_stop.stop_seq &gt; first_from_stop.stop_seq
+        AND first_transfer_stop.arrival_time IS NOT NULL
+
+        JOIN station transfer_station
+        ON transfer_station.id = first_transfer_stop.station_id
+
+        /*
+        * 第二程从第一程到达的换乘站出发。
+        */
+        JOIN train_stop second_transfer_stop
+        ON second_transfer_stop.station_id =
+        first_transfer_stop.station_id
+        AND second_transfer_stop.departure_time IS NOT NULL
+
+        JOIN train second_train
+        ON second_train.id = second_transfer_stop.train_id
+        AND second_train.status = 'ACTIVE'
+        AND second_train.id != first_train.id
+
+        JOIN train_run second_run
+        ON second_run.train_id = second_train.id
+        AND second_run.run_date BETWEEN #{query.travelDate}
+        AND DATE_ADD(#{query.travelDate}, INTERVAL 1 DAY)
+        AND second_run.sale_status = 'ON_SALE'
+        AND second_run.inventory_initialized = 1
+        AND second_run.run_status != 'CANCELLED'
+
+        JOIN train_stop second_to_stop
+        ON second_to_stop.train_id = second_train.id
+        AND second_to_stop.station_id = #{query.toStationId}
+        AND second_to_stop.stop_seq &gt;
+        second_transfer_stop.stop_seq
+        AND second_to_stop.arrival_time IS NOT NULL
+
+        JOIN station second_to_station
+        ON second_to_station.id = second_to_stop.station_id
+
+        JOIN station first_origin_station
+        ON first_origin_station.id =
+        first_train.origin_station_id
+
+        JOIN station first_terminal_station
+        ON first_terminal_station.id =
+        first_train.destination_station_id
+
+        JOIN station second_origin_station
+        ON second_origin_station.id =
+        second_train.origin_station_id
+
+        JOIN station second_terminal_station
+        ON second_terminal_station.id =
+        second_train.destination_station_id
+
+        WHERE first_run.run_date = #{query.travelDate}
+        AND first_run.sale_status = 'ON_SALE'
+        AND first_run.inventory_initialized = 1
+        AND first_run.run_status != 'CANCELLED'
+        AND first_run.id != second_run.id
+        AND transfer_station.id != #{query.fromStationId}
+        AND transfer_station.id != #{query.toStationId}
+
+        /*
+        * 第二程出发时间与第一程到达时间之间，
+        * 必须满足用户指定的最短、最长换乘时间。
+        */
+        AND TIMESTAMPDIFF(
+        MINUTE,
+        TIMESTAMP(
+        DATE_ADD(
+        first_run.run_date,
+        INTERVAL first_transfer_stop.arrival_day_offset DAY
+        ),
+        first_transfer_stop.arrival_time
+        ),
+        TIMESTAMP(
+        DATE_ADD(
+        second_run.run_date,
+        INTERVAL second_transfer_stop.departure_day_offset DAY
+        ),
+        second_transfer_stop.departure_time
+        )
+        ) BETWEEN #{query.minTransferMinutes}
+        AND #{query.maxTransferMinutes}
+
+        <choose>
+            <when test="query.sort == 'WAIT_TIME_ASC'">
+                ORDER BY wait_minutes ASC,
+                total_duration_minutes ASC,
+                first_departure_date_time ASC
+            </when>
+
+            <when test="query.sort == 'DEPARTURE_ASC'">
+                ORDER BY first_departure_date_time ASC,
+                total_duration_minutes ASC
+            </when>
+
+            <otherwise>
+                <!-- 总价格排序由 Service 在装配票价后完成 -->
+                ORDER BY total_duration_minutes ASC,
+                wait_minutes ASC,
+                first_departure_date_time ASC
+            </otherwise>
+        </choose>
+    </select>
+
+
+    <!-- ==================== 运行实例经停站查询 ==================== -->
+
+    <select id="selectRunStops"
+            resultType="com.example.railgo.data.vo.RunStopResponse">
+
+        SELECT
+        train_run.id AS run_id,
+        train_run.run_date,
+        train.train_no,
+        train_stop.stop_seq,
+        station.id AS station_id,
+        station.station_code,
+        station.name AS station_name,
+
+        CASE
+        WHEN train_stop.arrival_time IS NULL
+        THEN NULL
+        ELSE TIMESTAMP(
+        DATE_ADD(
+        train_run.run_date,
+        INTERVAL train_stop.arrival_day_offset DAY
+        ),
+        train_stop.arrival_time
+        )
+        END AS arrival_date_time,
+
+        CASE
+        WHEN train_stop.departure_time IS NULL
+        THEN NULL
+        ELSE TIMESTAMP(
+        DATE_ADD(
+        train_run.run_date,
+        INTERVAL train_stop.departure_day_offset DAY
+        ),
+        train_stop.departure_time
+        )
+        END AS departure_date_time,
+
+        train_stop.stop_minutes,
+        train_stop.distance_km,
+
+        CASE
+        WHEN train_stop.stop_seq = 1
+        THEN TRUE
+        ELSE FALSE
+        END AS origin,
+
+        CASE
+        WHEN train_stop.stop_seq = (
+        SELECT MAX(last_stop.stop_seq)
+        FROM train_stop last_stop
+        WHERE last_stop.train_id = train.id
+        )
+        THEN TRUE
+        ELSE FALSE
+        END AS terminal
+
+        FROM train_run
+        JOIN train
+        ON train.id = train_run.train_id
+        JOIN train_stop
+        ON train_stop.train_id = train.id
+        JOIN station
+        ON station.id = train_stop.station_id
+
+        WHERE train_run.id = #{runId}
+        ORDER BY train_stop.stop_seq ASC
+    </select>
+
+
+    <!-- ==================== 检查运行实例是否存在 ==================== -->
+
+    <select id="countRunById"
+            resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM train_run
+        WHERE id = #{runId}
+    </select>
+
     <select id="selectBookingRoute" resultType="com.example.railgo.data.vo.row.BookingRouteRow">
         SELECT tr.id AS run_id, tr.train_id, t.train_no, tr.sale_status, tr.inventory_initialized,
         fs.station_id AS from_station_id, ts.station_id AS to_station_id,

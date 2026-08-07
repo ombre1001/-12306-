@@ -169,4 +169,16 @@ public class AdminTrainController {
         adminTrainService.saveFares(trainId, request);
         return Result.ok();
     }
+
+    @PostMapping("/seats/init-all")
+    public ResponseEntity<Result<AdminAllTrainSeatInitResult>> initializeAllTrainSeats(
+            @Valid
+            @RequestBody
+            AdminAllTrainSeatInitRequest request
+    ) {
+        return Result.success(
+                adminTrainService.initializeAllTrainSeats(request),
+                "所有车次车厢和座位初始化完成"
+        );
+    }
 }
