@@ -71,9 +71,9 @@ public class SecurityConfig {
 
                         // 登录、注册、刷新令牌
                         .requestMatchers(
-                                "/api/v1/auth/login",
-                                "/api/v1/auth/register",
-                                "/api/v1/auth/refresh"
+                                "/auth/login",
+                                "/auth/register",
+                                "/auth/refresh"
                         ).permitAll()
 
                         // Swagger / OpenAPI
@@ -85,27 +85,27 @@ public class SecurityConfig {
 
                         // 公共车站查询
                         .requestMatchers(HttpMethod.GET,
-                                "/api/v1/stations",
-                                "/api/v1/stations/**"
+                                "/stations",
+                                "/stations/**"
                         ).permitAll()
 
                         // 公共车票查询
                         .requestMatchers(HttpMethod.GET,
-                                "/api/v1/tickets/direct",
-                                "/api/v1/tickets/transfers",
-                                "/api/v1/tickets/runs/*/stops",
-                                "/api/v1/tickets/runs/*/fares"
+                                "/tickets/direct",
+                                "/tickets/transfers",
+                                "/tickets/runs/*/stops",
+                                "/tickets/runs/*/fares"
                         ).permitAll()
 
                         // 业务管理员、系统管理员
-                        .requestMatchers("/api/v1/admin/**")
+                        .requestMatchers("/admin/**")
                         .hasAnyRole(
                                 "BUSINESS_ADMIN",
                                 "SYSTEM_ADMIN"
                         )
 
                         // 系统管理员专属接口
-                        .requestMatchers("/api/v1/system/**")
+                        .requestMatchers("/system/**")
                         .hasRole("SYSTEM_ADMIN")
 
                         .anyRequest()

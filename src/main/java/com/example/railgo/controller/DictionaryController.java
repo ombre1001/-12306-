@@ -19,7 +19,7 @@ import java.util.List;
         description = "查询席别、车次类型等公共字典数据"
 )
 @RestController
-@RequestMapping("/api/v1/dictionaries")
+@RequestMapping("/dictionaries")
 @RequiredArgsConstructor
 public class DictionaryController {
 

@@ -22,7 +22,7 @@ import java.util.List;
 )
 @Validated
 @RestController
-@RequestMapping("/api/v1/stations")
+@RequestMapping("/stations")
 @RequiredArgsConstructor
 public class StationController {
 

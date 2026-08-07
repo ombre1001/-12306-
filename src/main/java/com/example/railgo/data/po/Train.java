@@ -18,6 +18,9 @@ public class Train {
     @TableField("train_no")
     private String trainNo;
 
+    @TableField("source_train_code")
+    private String sourceTrainCode;
+
     @TableField("train_type")
     private String trainType;
 

@@ -34,7 +34,7 @@ import java.util.List;
 )
 @SecurityRequirement(name = "bearerAuth")
 @RestController
-@RequestMapping("/api/v1/users/me")
+@RequestMapping("/users/me")
 @RequiredArgsConstructor
 public class UserController {
 

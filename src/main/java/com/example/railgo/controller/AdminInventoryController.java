@@ -23,7 +23,7 @@ import java.util.List;
 @SecurityRequirement(name = "bearerAuth")
 @Validated
 @RestController
-@RequestMapping("/api/v1/admin/train-runs")
+@RequestMapping("/admin/train-runs")
 @RequiredArgsConstructor
 @PreAuthorize("hasAnyRole('BUSINESS_ADMIN','SYSTEM_ADMIN')")
 public class AdminInventoryController {

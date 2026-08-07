@@ -23,6 +23,18 @@ public class TrainRun {
 
     private LocalDateTime inventoryInitializedAt;
 
+    private Boolean sourceManaged;
+
+    private String sourceStatus;
+
+    private LocalDateTime sourceCheckedAt;
+
+    private LocalDateTime sourceLastSeenAt;
+
+    private LocalDateTime sourceValidUntil;
+
+    private String sourceHash;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

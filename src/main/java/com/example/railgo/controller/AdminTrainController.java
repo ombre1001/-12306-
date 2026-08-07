@@ -20,7 +20,7 @@ import java.util.Map;
 @Tag(name = "管理端车次、座席和票价接口")
 @Validated
 @RestController
-@RequestMapping("/api/v1/admin/trains")
+@RequestMapping("/admin/trains")
 @RequiredArgsConstructor
 @PreAuthorize("hasAnyRole('BUSINESS_ADMIN','SYSTEM_ADMIN')")
 public class AdminTrainController {

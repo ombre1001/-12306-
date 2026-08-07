@@ -21,7 +21,7 @@ import java.util.Map;
 @Tag(name = "管理端运行计划接口")
 @Validated
 @RestController
-@RequestMapping("/api/v1/admin/train-runs")
+@RequestMapping("/admin/train-runs")
 @RequiredArgsConstructor
 @PreAuthorize("hasAnyRole('BUSINESS_ADMIN','SYSTEM_ADMIN')")
 public class AdminTrainRunController {

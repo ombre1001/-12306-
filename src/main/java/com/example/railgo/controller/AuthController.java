@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.*;
         description = "用户注册、登录、刷新令牌和退出登录"
 )
 @RestController
-@RequestMapping("/api/v1/auth")
+@RequestMapping("/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
