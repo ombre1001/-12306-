@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.railgo.mapper.AdminOrderReportMapper">
+
+    <select id="selectOrderPage" resultType="com.example.railgo.data.vo.admin.AdminOrderSummaryResponse">
+        SELECT o.id AS order_id, o.order_no, o.user_id, u.phone AS user_phone,
+               u.nickname AS user_nickname, o.status, o.total_amount, o.expire_at, o.created_at,
+               MIN(r.run_date) AS first_travel_date,
+               GROUP_CONCAT(DISTINCT t.train_no ORDER BY t.train_no SEPARATOR '/') AS train_nos,
+               SUBSTRING_INDEX(GROUP_CONCAT(fs.name ORDER BY item.id SEPARATOR ','), ',', 1) AS from_station_name,
+               SUBSTRING_INDEX(GROUP_CONCAT(ts.name ORDER BY item.id DESC SEPARATOR ','), ',', 1) AS to_station_name,
+               COUNT(DISTINCT item.passenger_id) AS passenger_count,
+               COUNT(DISTINCT item.id) AS ticket_count
+        FROM ticket_order o
+        JOIN sys_user u ON u.id = o.user_id
+        LEFT JOIN order_item item ON item.order_id = o.id
+        LEFT JOIN train_run r ON r.id = item.run_id
+        LEFT JOIN train t ON t.id = r.train_id
+        LEFT JOIN station fs ON fs.id = item.from_station_id
+        LEFT JOIN station ts ON ts.id = item.to_station_id
+        WHERE 1 = 1
+        <if test="orderNo != null and orderNo != ''">AND o.order_no LIKE CONCAT('%', #{orderNo}, '%')</if>
+        <if test="userId != null">AND o.user_id = #{userId}</if>
+        <if test="status != null and status != ''">AND o.status = #{status}</if>
+        <if test="trainNo != null and trainNo != ''">
+            AND EXISTS (SELECT 1 FROM order_item ti JOIN train_run tr ON tr.id = ti.run_id
+                        JOIN train tt ON tt.id = tr.train_id
+                        WHERE ti.order_id = o.id AND tt.train_no LIKE CONCAT('%', #{trainNo}, '%'))
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (o.order_no LIKE CONCAT('%', #{keyword}, '%')
+                 OR u.phone LIKE CONCAT('%', #{keyword}, '%')
+                 OR u.nickname LIKE CONCAT('%', #{keyword}, '%')
+                 OR EXISTS (SELECT 1 FROM order_item ki JOIN passenger p ON p.id = ki.passenger_id
+                            JOIN station kfs ON kfs.id = ki.from_station_id
+                            JOIN station kts ON kts.id = ki.to_station_id
+                            WHERE ki.order_id = o.id AND (p.name LIKE CONCAT('%', #{keyword}, '%')
+                                  OR kfs.name LIKE CONCAT('%', #{keyword}, '%')
+                                  OR kts.name LIKE CONCAT('%', #{keyword}, '%'))))
+        </if>
+        <if test="startDate != null">AND o.created_at &gt;= #{startDate}</if>
+        <if test="endDate != null">AND o.created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>
+        GROUP BY o.id, o.order_no, o.user_id, u.phone, u.nickname, o.status,
+                 o.total_amount, o.expire_at, o.created_at
+        ORDER BY o.created_at DESC, o.id DESC
+    </select>
+
+    <select id="selectPaymentPage" resultType="com.example.railgo.data.vo.admin.AdminPaymentResponse">
+        SELECT p.id AS payment_id, p.payment_no, p.order_id, o.order_no, o.user_id,
+               u.phone AS user_phone, p.channel, p.amount, p.status, p.paid_at, p.created_at
+        FROM payment_record p
+        JOIN ticket_order o ON o.id = p.order_id
+        JOIN sys_user u ON u.id = o.user_id
+        WHERE 1 = 1
+        <if test="paymentNo != null and paymentNo != ''">AND p.payment_no LIKE CONCAT('%', #{paymentNo}, '%')</if>
+        <if test="orderNo != null and orderNo != ''">AND o.order_no LIKE CONCAT('%', #{orderNo}, '%')</if>
+        <if test="status != null and status != ''">AND p.status = #{status}</if>
+        <if test="channel != null and channel != ''">AND p.channel = #{channel}</if>
+        <if test="startDate != null">AND p.created_at &gt;= #{startDate}</if>
+        <if test="endDate != null">AND p.created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>
+        ORDER BY p.created_at DESC, p.id DESC
+    </select>
+
+    <select id="selectRefundPage" resultType="com.example.railgo.data.vo.admin.AdminRefundResponse">
+        SELECT rr.id AS refund_id, rr.refund_no, rr.return_id, rtn.return_no,
+               rtn.order_id, o.order_no, rtn.order_item_id, rtn.user_id,
+               u.phone AS user_phone, rtn.ticket_amount, rtn.fee_amount,
+               rr.amount, rr.status, rr.refunded_at, rr.created_at
+        FROM refund_record rr
+        JOIN ticket_return rtn ON rtn.id = rr.return_id
+        JOIN ticket_order o ON o.id = rtn.order_id
+        JOIN sys_user u ON u.id = rtn.user_id
+        WHERE 1 = 1
+        <if test="refundNo != null and refundNo != ''">AND rr.refund_no LIKE CONCAT('%', #{refundNo}, '%')</if>
+        <if test="orderNo != null and orderNo != ''">AND o.order_no LIKE CONCAT('%', #{orderNo}, '%')</if>
+        <if test="status != null and status != ''">AND rr.status = #{status}</if>
+        <if test="startDate != null">AND rr.created_at &gt;= #{startDate}</if>
+        <if test="endDate != null">AND rr.created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>
+        ORDER BY rr.created_at DESC, rr.id DESC
+    </select>
+
+    <select id="selectChangePage" resultType="com.example.railgo.data.vo.admin.AdminChangeResponse">
+        SELECT c.id AS change_id, c.change_no, c.user_id, u.phone AS user_phone,
+               old_item.order_id, o.order_no, c.old_order_item_id, c.new_order_item_id,
+               old_train.train_no AS old_train_no, new_train.train_no AS new_train_no,
+               c.original_amount, c.new_amount, c.difference_amount, c.difference_type,
+               c.status, c.expire_at, c.confirmed_at, c.cancelled_at, c.created_at
+        FROM change_record c
+        JOIN order_item old_item ON old_item.id = c.old_order_item_id
+        JOIN ticket_order o ON o.id = old_item.order_id
+        JOIN sys_user u ON u.id = c.user_id
+        JOIN train_run old_run ON old_run.id = old_item.run_id
+        JOIN train old_train ON old_train.id = old_run.train_id
+        JOIN order_item new_item ON new_item.id = c.new_order_item_id
+        JOIN train_run new_run ON new_run.id = new_item.run_id
+        JOIN train new_train ON new_train.id = new_run.train_id
+        WHERE 1 = 1
+        <if test="changeNo != null and changeNo != ''">AND c.change_no LIKE CONCAT('%', #{changeNo}, '%')</if>
+        <if test="orderNo != null and orderNo != ''">AND o.order_no LIKE CONCAT('%', #{orderNo}, '%')</if>
+        <if test="status != null and status != ''">AND c.status = #{status}</if>
+        <if test="trainNo != null and trainNo != ''">
+            AND (old_train.train_no LIKE CONCAT('%', #{trainNo}, '%')
+                 OR new_train.train_no LIKE CONCAT('%', #{trainNo}, '%'))
+        </if>
+        <if test="startDate != null">AND c.created_at &gt;= #{startDate}</if>
+        <if test="endDate != null">AND c.created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>
+        ORDER BY c.created_at DESC, c.id DESC
+    </select>
+
+    <select id="selectInventoryOccupations"
+            resultType="com.example.railgo.data.vo.admin.AdminInventoryOccupationResponse">
+        SELECT item.id AS order_item_id, item.run_id, t.train_no, coach.coach_no, seat.seat_no,
+               item.from_seq, item.to_seq, COUNT(inv.id) AS occupied_segment_count,
+               GROUP_CONCAT(CONCAT(inv.segment_seq, ':', inv.status)
+                            ORDER BY inv.segment_seq SEPARATOR ',') AS inventory_statuses
+        FROM order_item item
+        JOIN train_run r ON r.id = item.run_id
+        JOIN train t ON t.id = r.train_id
+        LEFT JOIN train_seat seat ON seat.id = item.seat_id
+        LEFT JOIN train_coach coach ON coach.id = seat.coach_id
+        LEFT JOIN seat_segment_inventory inv ON inv.order_item_id = item.id
+        WHERE item.order_id = #{orderId}
+        GROUP BY item.id, item.run_id, t.train_no, coach.coach_no, seat.seat_no,
+                 item.from_seq, item.to_seq
+        ORDER BY item.id
+    </select>
+
+    <select id="selectSalesSummary" resultType="com.example.railgo.data.vo.admin.AdminSalesSummaryResponse">
+        SELECT
+          (SELECT COUNT(*) FROM ticket_order o
+           WHERE o.created_at &gt;= #{startDate} AND o.created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS order_count,
+          (SELECT COUNT(DISTINCT p.order_id) FROM payment_record p
+           WHERE p.status = 'SUCCESS' AND p.paid_at &gt;= #{startDate}
+             AND p.paid_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS paid_order_count,
+          (SELECT COUNT(DISTINCT item.id) FROM payment_record p
+           JOIN order_item item ON item.order_id = p.order_id
+           WHERE p.status = 'SUCCESS' AND p.paid_at &gt;= #{startDate}
+             AND p.paid_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)
+             AND NOT EXISTS (SELECT 1 FROM change_record c
+                             WHERE c.new_order_item_id = item.id)) AS ticket_count,
+          (SELECT COALESCE(SUM(p.amount), 0) FROM payment_record p
+           WHERE p.status = 'SUCCESS' AND p.paid_at &gt;= #{startDate}
+             AND p.paid_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS gross_sales,
+          (SELECT COALESCE(SUM(rr.amount), 0) FROM refund_record rr
+           WHERE rr.status = 'SUCCESS' AND rr.refunded_at &gt;= #{startDate}
+             AND rr.refunded_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS refund_amount,
+          (SELECT COALESCE(SUM(rtn.fee_amount), 0) FROM ticket_return rtn
+           WHERE rtn.status = 'COMPLETED' AND rtn.completed_at &gt;= #{startDate}
+             AND rtn.completed_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS return_fee_amount,
+          (SELECT COALESCE(SUM(f.amount), 0) FROM change_fund_record f
+           WHERE f.status = 'SUCCESS' AND f.fund_type = 'PAYMENT'
+             AND f.processed_at &gt;= #{startDate}
+             AND f.processed_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS change_payment_amount,
+          (SELECT COALESCE(SUM(f.amount), 0) FROM change_fund_record f
+           WHERE f.status = 'SUCCESS' AND f.fund_type = 'REFUND'
+             AND f.processed_at &gt;= #{startDate}
+             AND f.processed_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS change_refund_amount
+    </select>
+
+    <select id="selectSalesTrend" resultType="com.example.railgo.data.vo.admin.AdminSalesTrendResponse">
+        SELECT event.period,
+               SUM(event.paid_order_count) AS paid_order_count,
+               SUM(event.ticket_count) AS ticket_count,
+               SUM(event.gross_sales) AS gross_sales,
+               SUM(event.refund_amount) AS refund_amount,
+               SUM(event.change_payment_amount) AS change_payment_amount,
+               SUM(event.change_refund_amount) AS change_refund_amount,
+               SUM(event.gross_sales + event.change_payment_amount
+                   - event.refund_amount - event.change_refund_amount) AS net_revenue
+        FROM (
+          SELECT <include refid="periodExpression"><property name="column" value="p.paid_at"/></include> AS period,
+                 COUNT(DISTINCT p.order_id) AS paid_order_count,
+                 SUM((SELECT COUNT(*) FROM order_item item WHERE item.order_id = p.order_id
+                      AND NOT EXISTS (SELECT 1 FROM change_record c
+                                      WHERE c.new_order_item_id = item.id))) AS ticket_count,
+                 SUM(p.amount) AS gross_sales,
+                 0 AS refund_amount, 0 AS change_payment_amount, 0 AS change_refund_amount
+          FROM payment_record p
+          WHERE p.status = 'SUCCESS' AND p.paid_at &gt;= #{startDate}
+            AND p.paid_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)
+          GROUP BY period
+          UNION ALL
+          SELECT <include refid="periodExpression"><property name="column" value="rr.refunded_at"/></include>,
+                 0, 0, 0, SUM(rr.amount), 0, 0
+          FROM refund_record rr
+          WHERE rr.status = 'SUCCESS' AND rr.refunded_at &gt;= #{startDate}
+            AND rr.refunded_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)
+          GROUP BY 1
+          UNION ALL
+          SELECT <include refid="periodExpression"><property name="column" value="f.processed_at"/></include>,
+                 0, 0, 0, 0,
+                 SUM(CASE WHEN f.fund_type = 'PAYMENT' THEN f.amount ELSE 0 END),
+                 SUM(CASE WHEN f.fund_type = 'REFUND' THEN f.amount ELSE 0 END)
+          FROM change_fund_record f
+          WHERE f.status = 'SUCCESS' AND f.processed_at &gt;= #{startDate}
+            AND f.processed_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)
+          GROUP BY 1
+        ) event
+        GROUP BY event.period
+        ORDER BY event.period
+    </select>
+
+    <sql id="periodExpression">
+        <choose>
+            <when test="granularity == 'MONTH'">DATE_FORMAT(${column}, '%Y-%m')</when>
+            <when test="granularity == 'WEEK'">DATE_FORMAT(${column}, '%x-W%v')</when>
+            <otherwise>DATE_FORMAT(${column}, '%Y-%m-%d')</otherwise>
+        </choose>
+    </sql>
+
+    <select id="selectPopularRoutes" resultType="com.example.railgo.data.vo.admin.AdminPopularRouteResponse">
+        SELECT item.from_station_id, fs.name AS from_station_name,
+               item.to_station_id, ts.name AS to_station_name,
+               COUNT(DISTINCT item.id) AS ticket_count,
+               COUNT(DISTINCT item.passenger_id) AS passenger_count,
+               COALESCE(SUM(item.price), 0) AS sales_amount
+        FROM order_item item
+        JOIN station fs ON fs.id = item.from_station_id
+        JOIN station ts ON ts.id = item.to_station_id
+        JOIN train_run r ON r.id = item.run_id
+        JOIN train t ON t.id = r.train_id
+        WHERE EXISTS (SELECT 1 FROM payment_record p WHERE p.order_id = item.order_id
+                      AND p.status = 'SUCCESS' AND p.paid_at &gt;= #{startDate}
+                      AND p.paid_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY))
+          AND NOT EXISTS (SELECT 1 FROM change_record c WHERE c.new_order_item_id = item.id)
+        <if test="trainNo != null and trainNo != ''">AND t.train_no = #{trainNo}</if>
+        <if test="fromStationId != null">AND item.from_station_id = #{fromStationId}</if>
+        <if test="toStationId != null">AND item.to_station_id = #{toStationId}</if>
+        GROUP BY item.from_station_id, fs.name, item.to_station_id, ts.name
+        ORDER BY ticket_count DESC, sales_amount DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectLoadFactor" resultType="com.example.railgo.data.vo.admin.AdminLoadFactorResponse">
+        SELECT r.id AS run_id, r.run_date, t.train_no, st.code AS seat_type_code,
+               st.name AS seat_type_name, COUNT(inv.id) AS total_segment_count,
+               SUM(CASE WHEN inv.status = 'SOLD' THEN 1 ELSE 0 END) AS sold_segment_count,
+               SUM(CASE WHEN inv.status = 'LOCKED' THEN 1 ELSE 0 END) AS locked_segment_count,
+               ROUND(SUM(CASE WHEN inv.status = 'SOLD' THEN 1 ELSE 0 END) * 100.0 /
+                     NULLIF(COUNT(inv.id), 0), 2) AS load_factor
+        FROM seat_segment_inventory inv
+        JOIN train_run r ON r.id = inv.run_id
+        JOIN train t ON t.id = r.train_id
+        JOIN train_seat seat ON seat.id = inv.seat_id
+        JOIN train_coach coach ON coach.id = seat.coach_id
+        JOIN seat_type st ON st.id = coach.seat_type_id
+        WHERE r.run_date &gt;= #{startDate} AND r.run_date &lt;= #{endDate}
+        <if test="trainNo != null and trainNo != ''">AND t.train_no = #{trainNo}</if>
+        <if test="seatTypeCode != null and seatTypeCode != ''">AND st.code = #{seatTypeCode}</if>
+        GROUP BY r.id, r.run_date, t.train_no, st.id, st.code, st.name, st.sort_no
+        ORDER BY r.run_date, t.train_no, st.sort_no
+    </select>
+
+    <select id="selectUserStatistics" resultType="com.example.railgo.data.vo.admin.AdminUserStatisticsResponse">
+        SELECT
+          (SELECT COUNT(*) FROM sys_user u
+           WHERE u.created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS total_users,
+          (SELECT COUNT(*) FROM sys_user u WHERE u.status = 'ENABLED'
+           AND u.created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS enabled_users,
+          (SELECT COUNT(*) FROM sys_user u WHERE u.status &lt;&gt; 'ENABLED'
+           AND u.created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS disabled_users,
+          (SELECT COUNT(*) FROM sys_user u WHERE u.created_at &gt;= #{startDate}
+           AND u.created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS new_users,
+          (SELECT COUNT(DISTINCT o.user_id) FROM payment_record p
+           JOIN ticket_order o ON o.id = p.order_id
+           WHERE p.status = 'SUCCESS' AND p.paid_at &gt;= #{startDate}
+             AND p.paid_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS active_purchasing_users
+    </select>
+</mapper>
