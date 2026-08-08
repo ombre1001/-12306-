@@ -220,4 +220,15 @@
         WHERE order_id = #{orderId} AND status = 'LOCKED'
     </update>
 
+    <select id="countLockedItems" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM order_item
+        WHERE order_id = #{orderId} AND status = 'LOCKED'
+    </select>
+
+    <update id="issueLockedItems">
+        UPDATE order_item
+        SET status = 'ISSUED', updated_at = NOW()
+        WHERE order_id = #{orderId} AND status = 'LOCKED'
+    </update>
+
 </mapper>

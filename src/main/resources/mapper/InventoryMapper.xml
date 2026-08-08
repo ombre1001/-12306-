@@ -114,4 +114,25 @@
             version = version + 1, updated_at = NOW()
         WHERE order_item_id = #{orderItemId} AND status = 'SOLD'
     </update>
+
+    <select id="countLockedOrderSegments" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM seat_segment_inventory inventory
+        JOIN order_item item ON item.id = inventory.order_item_id
+        WHERE item.order_id = #{orderId}
+        AND item.status = 'LOCKED'
+        AND inventory.status = 'LOCKED'
+    </select>
+
+    <update id="sellLockedOrderSegments">
+        UPDATE seat_segment_inventory inventory
+        JOIN order_item item ON item.id = inventory.order_item_id
+        SET inventory.status = 'SOLD',
+        inventory.lock_expire_at = NULL,
+        inventory.version = inventory.version + 1,
+        inventory.updated_at = NOW()
+        WHERE item.order_id = #{orderId}
+        AND item.status = 'LOCKED'
+        AND inventory.status = 'LOCKED'
+    </update>
 </mapper>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.railgo.mapper.RefundRecordMapper">
+
+    <select id="selectOwnedRefundDetail"
+            resultType="com.example.railgo.data.vo.RefundDetailResponse">
+        SELECT refund.id AS refund_id,
+               refund.refund_no,
+               refund.status,
+               refund.amount,
+               payment.payment_no,
+               payment.channel,
+               ticket_return.id AS return_id,
+               ticket_return.return_no,
+               ticket_return.order_item_id AS ticket_id,
+               orders.id AS order_id,
+               orders.order_no,
+               refund.refunded_at,
+               refund.created_at
+        FROM refund_record refund
+        JOIN ticket_return ON ticket_return.id = refund.return_id
+        JOIN ticket_order orders ON orders.id = ticket_return.order_id
+        JOIN payment_record payment ON payment.id = refund.payment_id
+        WHERE refund.id = #{refundId} AND ticket_return.user_id = #{userId}
+        LIMIT 1
+    </select>
+</mapper>

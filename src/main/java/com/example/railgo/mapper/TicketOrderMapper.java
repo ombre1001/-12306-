@@ -78,4 +78,8 @@ public interface TicketOrderMapper extends BaseMapper<TicketOrder> {
     int cancelLockedItems(
             @Param("orderId") Long orderId
     );
+
+    int countLockedItems(@Param("orderId") Long orderId);
+
+    int issueLockedItems(@Param("orderId") Long orderId);
 }

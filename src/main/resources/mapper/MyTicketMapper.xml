@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.railgo.mapper.MyTicketMapper">
+
+    <sql id="ticketJoins">
+        FROM order_item item
+        JOIN ticket_order orders ON orders.id = item.order_id
+        JOIN passenger ON passenger.id = item.passenger_id
+        JOIN train_run run ON run.id = item.run_id
+        JOIN train ON train.id = run.train_id
+        JOIN station from_station ON from_station.id = item.from_station_id
+        JOIN station to_station ON to_station.id = item.to_station_id
+        JOIN train_stop from_stop ON from_stop.train_id = run.train_id
+                                 AND from_stop.stop_seq = item.from_seq
+        JOIN train_stop to_stop ON to_stop.train_id = run.train_id
+                               AND to_stop.stop_seq = item.to_seq
+        JOIN seat_type ON seat_type.id = item.seat_type_id
+        LEFT JOIN train_seat seat ON seat.id = item.seat_id
+        LEFT JOIN train_coach coach ON coach.id = seat.coach_id
+    </sql>
+
+    <select id="selectMyTicketPage"
+            resultType="com.example.railgo.data.vo.MyTicketResponse">
+        SELECT item.id AS ticket_id,
+               item.order_id,
+               orders.order_no,
+               item.status AS ticket_status,
+               item.passenger_id,
+               passenger.name AS passenger_name,
+               item.run_id,
+               train.train_no,
+               item.from_station_id,
+               from_station.name AS from_station_name,
+               item.to_station_id,
+               to_station.name AS to_station_name,
+               TIMESTAMP(DATE_ADD(run.run_date, INTERVAL from_stop.departure_day_offset DAY),
+                         from_stop.departure_time) AS departure_date_time,
+               TIMESTAMP(DATE_ADD(run.run_date, INTERVAL to_stop.arrival_day_offset DAY),
+                         to_stop.arrival_time) AS arrival_date_time,
+               seat_type.code AS seat_type_code,
+               seat_type.name AS seat_type_name,
+               coach.coach_no,
+               seat.seat_no,
+               item.price,
+               COALESCE(payment.paid_at, item.updated_at) AS issued_at
+        <include refid="ticketJoins"/>
+        LEFT JOIN payment_record payment ON payment.id = (
+            SELECT MAX(success_payment.id)
+            FROM payment_record success_payment
+            WHERE success_payment.order_id = item.order_id
+              AND success_payment.status = 'SUCCESS'
+        )
+        WHERE orders.user_id = #{userId}
+          AND item.status IN ('ISSUED', 'REFUNDED', 'CHANGED')
+        <if test="status != null and status != ''">
+            AND item.status = #{status}
+        </if>
+        ORDER BY departure_date_time DESC, item.id DESC
+    </select>
+
+    <select id="selectOwnedTicketDetail"
+            resultType="com.example.railgo.data.vo.MyTicketDetailResponse">
+        SELECT item.id AS ticket_id,
+               item.order_id,
+               orders.order_no,
+               orders.status AS order_status,
+               item.status AS ticket_status,
+               item.passenger_id,
+               passenger.name AS passenger_name,
+               passenger.id_type,
+               item.run_id,
+               run.run_date,
+               run.run_status,
+               train.train_no,
+               item.from_station_id,
+               from_station.name AS from_station_name,
+               item.from_seq,
+               item.to_station_id,
+               to_station.name AS to_station_name,
+               item.to_seq,
+               TIMESTAMP(DATE_ADD(run.run_date, INTERVAL from_stop.departure_day_offset DAY),
+                         from_stop.departure_time) AS departure_date_time,
+               TIMESTAMP(DATE_ADD(run.run_date, INTERVAL to_stop.arrival_day_offset DAY),
+                         to_stop.arrival_time) AS arrival_date_time,
+               item.seat_type_id,
+               seat_type.code AS seat_type_code,
+               seat_type.name AS seat_type_name,
+               item.seat_id,
+               coach.coach_no,
+               seat.seat_no,
+               item.price,
+               payment.paid_at,
+               item.created_at,
+               item.updated_at
+        <include refid="ticketJoins"/>
+        LEFT JOIN payment_record payment ON payment.id = (
+            SELECT MAX(success_payment.id)
+            FROM payment_record success_payment
+            WHERE success_payment.order_id = item.order_id
+              AND success_payment.status = 'SUCCESS'
+        )
+        WHERE item.id = #{ticketId}
+          AND orders.user_id = #{userId}
+          AND item.status IN ('ISSUED', 'REFUNDED', 'CHANGED')
+        LIMIT 1
+    </select>
+</mapper>

@@ -64,4 +64,8 @@ public interface InventoryMapper {
     int sellLockedOrderItemSegments(@Param("orderItemId") Long orderItemId);
 
     int releaseSoldOrderItemSegments(@Param("orderItemId") Long orderItemId);
+
+    int countLockedOrderSegments(@Param("orderId") Long orderId);
+
+    int sellLockedOrderSegments(@Param("orderId") Long orderId);
 }

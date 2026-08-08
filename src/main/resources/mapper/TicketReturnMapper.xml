@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.railgo.mapper.TicketReturnMapper">
+
+    <select id="selectReturnableTicketForUpdate"
+            resultType="com.example.railgo.data.vo.row.ReturnableTicketRow">
+        SELECT item.id AS ticket_id,
+               item.order_id,
+               orders.order_no,
+               orders.status AS order_status,
+               orders.user_id,
+               item.status AS ticket_status,
+               passenger.name AS passenger_name,
+               train.train_no,
+               from_station.name AS from_station_name,
+               to_station.name AS to_station_name,
+               item.from_seq,
+               item.to_seq,
+               item.price,
+               TIMESTAMP(DATE_ADD(run.run_date, INTERVAL from_stop.departure_day_offset DAY),
+                         from_stop.departure_time) AS departure_date_time
+        FROM order_item item
+        JOIN ticket_order orders ON orders.id = item.order_id
+        JOIN passenger ON passenger.id = item.passenger_id
+        JOIN train_run run ON run.id = item.run_id
+        JOIN train ON train.id = run.train_id
+        JOIN station from_station ON from_station.id = item.from_station_id
+        JOIN station to_station ON to_station.id = item.to_station_id
+        JOIN train_stop from_stop ON from_stop.train_id = run.train_id
+                                 AND from_stop.stop_seq = item.from_seq
+        WHERE item.id = #{ticketId} AND orders.user_id = #{userId}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <select id="selectByUserAndClientRequestId"
+            resultType="com.example.railgo.data.po.TicketReturn">
+        SELECT * FROM ticket_return
+        WHERE user_id = #{userId} AND client_request_id = #{clientRequestId}
+        LIMIT 1
+    </select>
+
+    <select id="countActiveChange" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM change_record
+        WHERE (old_order_item_id = #{ticketId} OR new_order_item_id = #{ticketId})
+          AND status IN ('WAITING_CONFIRMATION', 'WAITING_PAYMENT')
+          AND expire_at &gt; NOW()
+    </select>
+
+    <select id="countIssuedTickets" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM order_item
+        WHERE order_id = #{orderId} AND status = 'ISSUED'
+    </select>
+
+    <update id="updateOrderStatus">
+        UPDATE ticket_order
+        SET status = #{status}, updated_at = NOW()
+        WHERE id = #{orderId} AND status IN ('PAID', 'PARTIALLY_REFUNDED')
+    </update>
+
+    <select id="selectReturnDetail"
+            resultType="com.example.railgo.data.vo.TicketReturnResponse">
+        SELECT ticket_return.id AS return_id,
+               ticket_return.return_no,
+               ticket_return.order_id,
+               orders.order_no,
+               ticket_return.order_item_id AS ticket_id,
+               passenger.name AS passenger_name,
+               train.train_no,
+               from_station.name AS from_station_name,
+               to_station.name AS to_station_name,
+               TIMESTAMP(DATE_ADD(run.run_date, INTERVAL from_stop.departure_day_offset DAY),
+                         from_stop.departure_time) AS departure_date_time,
+               ticket_return.ticket_amount,
+               ticket_return.fee_rate,
+               ticket_return.fee_amount,
+               ticket_return.refund_amount,
+               ticket_return.status AS return_status,
+               refund.id AS refund_id,
+               refund.refund_no,
+               refund.status AS refund_status,
+               refund.refunded_at,
+               ticket_return.created_at
+        FROM ticket_return
+        JOIN ticket_order orders ON orders.id = ticket_return.order_id
+        JOIN order_item item ON item.id = ticket_return.order_item_id
+        JOIN passenger ON passenger.id = item.passenger_id
+        JOIN train_run run ON run.id = item.run_id
+        JOIN train ON train.id = run.train_id
+        JOIN station from_station ON from_station.id = item.from_station_id
+        JOIN station to_station ON to_station.id = item.to_station_id
+        JOIN train_stop from_stop ON from_stop.train_id = run.train_id
+                                 AND from_stop.stop_seq = item.from_seq
+        LEFT JOIN refund_record refund ON refund.return_id = ticket_return.id
+        WHERE ticket_return.id = #{returnId} AND ticket_return.user_id = #{userId}
+        LIMIT 1
+    </select>
+</mapper>

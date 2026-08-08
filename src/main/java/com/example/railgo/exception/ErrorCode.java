@@ -52,6 +52,11 @@ public enum ErrorCode {
     CHANGE_PAYMENT_NOT_REQUIRED(40935, HttpStatus.CONFLICT, "该改签无需补款"),
     CHANGE_DUPLICATE_REQUEST(40936, HttpStatus.CONFLICT, "请勿重复提交改签申请"),
 
+    DUPLICATE_PAYMENT_REQUEST(40941, HttpStatus.CONFLICT, "请勿重复提交支付请求"),
+    PAYMENT_RECORD_NOT_FOUND(40441, HttpStatus.NOT_FOUND, "支付记录不存在"),
+    TICKET_RETURN_NOT_ALLOWED(40942, HttpStatus.CONFLICT, "当前车票不允许退票"),
+    DUPLICATE_RETURN_REQUEST(40943, HttpStatus.CONFLICT, "请勿重复提交退票请求"),
+
     PHONE_EXISTS(40905, HttpStatus.CONFLICT, "手机号已注册"),
 
     OLD_PASSWORD_ERROR(40906, HttpStatus.CONFLICT, "原密码错误"),
@@ -73,6 +78,11 @@ public enum ErrorCode {
     ORDER_CANCEL_FAILED(50015, HttpStatus.INTERNAL_SERVER_ERROR, "订单取消失败"),
     CHANGE_CREATE_FAILED(50016, HttpStatus.INTERNAL_SERVER_ERROR, "改签申请创建失败"),
     CHANGE_CONFIRM_FAILED(50017, HttpStatus.INTERNAL_SERVER_ERROR, "改签确认失败"),
+
+    PAYMENT_CREATE_FAILED(50018, HttpStatus.INTERNAL_SERVER_ERROR, "支付单创建失败"),
+    PAYMENT_CONFIRM_FAILED(50019, HttpStatus.INTERNAL_SERVER_ERROR, "支付确认失败"),
+    TICKET_RETURN_FAILED(50020, HttpStatus.INTERNAL_SERVER_ERROR, "退票处理失败"),
+    REFUND_CREATE_FAILED(50021, HttpStatus.INTERNAL_SERVER_ERROR, "退款记录创建失败"),
 
     // 管理端车站
     STATION_NOT_FOUND(40421, HttpStatus.NOT_FOUND, "车站不存在"),

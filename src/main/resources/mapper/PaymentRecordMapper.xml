@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.railgo.mapper.PaymentRecordMapper">
+
+    <select id="selectByOrderAndClientRequestId"
+            resultType="com.example.railgo.data.po.PaymentRecord">
+        SELECT *
+        FROM payment_record
+        WHERE order_id = #{orderId}
+          AND client_request_id = #{clientRequestId}
+        LIMIT 1
+    </select>
+
+    <select id="selectSuccessfulByOrderIdForUpdate"
+            resultType="com.example.railgo.data.po.PaymentRecord">
+        SELECT *
+        FROM payment_record
+        WHERE order_id = #{orderId} AND status = 'SUCCESS'
+        ORDER BY id DESC
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <select id="selectProcessingByOrderIdForUpdate"
+            resultType="com.example.railgo.data.po.PaymentRecord">
+        SELECT *
+        FROM payment_record
+        WHERE order_id = #{orderId} AND status = 'PROCESSING'
+        ORDER BY id DESC
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <select id="selectOwnedByPaymentNo"
+            resultType="com.example.railgo.data.po.PaymentRecord">
+        SELECT payment.*
+        FROM payment_record payment
+        JOIN ticket_order orders ON orders.id = payment.order_id
+        WHERE payment.payment_no = #{paymentNo}
+          AND orders.user_id = #{userId}
+        LIMIT 1
+    </select>
+
+    <select id="selectOwnedByPaymentNoForUpdate"
+            resultType="com.example.railgo.data.po.PaymentRecord">
+        SELECT payment.*
+        FROM payment_record payment
+        JOIN ticket_order orders ON orders.id = payment.order_id
+        WHERE payment.payment_no = #{paymentNo}
+          AND orders.user_id = #{userId}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+</mapper>
