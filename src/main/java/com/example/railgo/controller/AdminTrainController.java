@@ -22,7 +22,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/admin/trains")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('BUSINESS_ADMIN','SYSTEM_ADMIN')")
+@PreAuthorize("hasRole('SYSTEM_ADMIN') or hasAuthority('BUSINESS:TRAIN:WRITE')")
 public class AdminTrainController {
 
     private final AdminTrainService adminTrainService;

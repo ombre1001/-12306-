@@ -113,6 +113,18 @@ public enum ErrorCode {
     RUN_SALE_STATUS_INVALID(40029, HttpStatus.BAD_REQUEST, "运行状态转换不合法"),
     RUN_ALREADY_HAS_ORDER(40928, HttpStatus.CONFLICT, "运行实例已有订单，只能停运，不能删除"),
 
+    // 管理员、角色与权限
+    ADMIN_USER_NOT_FOUND(40431, HttpStatus.NOT_FOUND, "管理员或用户不存在"),
+    ROLE_NOT_FOUND(40432, HttpStatus.NOT_FOUND, "角色不存在"),
+    PERMISSION_NOT_FOUND(40433, HttpStatus.NOT_FOUND, "权限不存在"),
+    ADMIN_PHONE_EXISTS(40951, HttpStatus.CONFLICT, "管理员手机号已存在"),
+    ADMIN_STATUS_INVALID(40031, HttpStatus.BAD_REQUEST, "管理员状态不合法"),
+    ADMIN_ROLE_INVALID(40032, HttpStatus.BAD_REQUEST, "管理员角色不合法"),
+    ADMIN_CANNOT_DISABLE_SELF(40952, HttpStatus.CONFLICT, "不能禁用当前登录账号"),
+    LAST_SYSTEM_ADMIN(40953, HttpStatus.CONFLICT, "必须至少保留一个启用的系统管理员"),
+    ADMIN_PASSWORD_INVALID(40033, HttpStatus.BAD_REQUEST, "管理员密码不符合安全要求"),
+    AUDIT_LOG_NOT_FOUND(40434, HttpStatus.NOT_FOUND, "操作日志不存在"),
+
     INTERNAL_ERROR(50000, HttpStatus.INTERNAL_SERVER_ERROR, "系统内部错误，请稍后重试");
 
     private final int code;

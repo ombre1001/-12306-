@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/admin/stations")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('BUSINESS_ADMIN','SYSTEM_ADMIN')")
+@PreAuthorize("hasRole('SYSTEM_ADMIN') or hasAuthority('BUSINESS:STATION:WRITE')")
 public class AdminStationController {
 
     private final AdminStationService adminStationService;
@@ -58,7 +58,6 @@ public class AdminStationController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('BUSINESS_ADMIN','SYSTEM_ADMIN')")
     public ResponseEntity<Result<Station>> create(
             @Valid
             @RequestBody

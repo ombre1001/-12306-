@@ -25,7 +25,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/admin/train-runs")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('BUSINESS_ADMIN','SYSTEM_ADMIN')")
+@PreAuthorize("hasRole('SYSTEM_ADMIN') or hasAuthority('BUSINESS:RUN:WRITE')")
 public class AdminInventoryController {
     private final InventoryService inventoryService;
 

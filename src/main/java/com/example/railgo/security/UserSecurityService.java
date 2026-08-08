@@ -32,7 +32,8 @@ public class UserSecurityService {
                 "ENABLED".equals(user.getStatus()),
                 userMapper.selectRoleCodesByUserId(
                         userId
-                )
+                ),
+                userMapper.selectPermissionCodesByUserId(userId)
         );
     }
 }

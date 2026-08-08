@@ -24,6 +24,17 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
             @Param("userId") Long userId
     );
 
+    @Select("""
+            SELECT DISTINCT p.permission_code
+            FROM sys_permission p
+            JOIN sys_role_permission rp ON rp.permission_id = p.id
+            JOIN sys_user_role ur ON ur.role_id = rp.role_id
+            WHERE ur.user_id = #{userId}
+              AND p.status = 'ENABLED'
+            ORDER BY p.permission_code
+            """)
+    List<String> selectPermissionCodesByUserId(@Param("userId") Long userId);
+
     @Insert("""
             INSERT INTO sys_user_role(user_id, role_id)
             SELECT #{userId}, id
