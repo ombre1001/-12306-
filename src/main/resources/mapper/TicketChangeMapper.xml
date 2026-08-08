@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.railgo.mapper.TicketChangeMapper">
+
+    <sql id="ticketColumns">
+        item.id AS ticket_id, item.order_id, orders.user_id, item.passenger_id,
+        passenger.name AS passenger_name, item.run_id, run.train_id, train.train_no,
+        item.from_station_id, item.to_station_id, item.from_seq, item.to_seq,
+        item.seat_type_id, seat_type.code AS seat_type_code, item.seat_id,
+        coach.coach_no, seat.seat_no, item.price, item.status,
+        TIMESTAMP(DATE_ADD(run.run_date, INTERVAL from_stop.departure_day_offset DAY),
+                  from_stop.departure_time) AS departure_date_time,
+        TIMESTAMP(DATE_ADD(run.run_date, INTERVAL to_stop.arrival_day_offset DAY),
+                  to_stop.arrival_time) AS arrival_date_time
+    </sql>
+
+    <select id="selectOwnedTicketForUpdate"
+            resultType="com.example.railgo.data.vo.row.ChangeTicketRow">
+        SELECT <include refid="ticketColumns"/>
+        FROM order_item item
+        JOIN ticket_order orders ON orders.id = item.order_id
+        JOIN passenger ON passenger.id = item.passenger_id
+        JOIN train_run run ON run.id = item.run_id
+        JOIN train ON train.id = run.train_id
+        JOIN train_stop from_stop ON from_stop.train_id = run.train_id
+                                  AND from_stop.stop_seq = item.from_seq
+        JOIN train_stop to_stop ON to_stop.train_id = run.train_id
+                                AND to_stop.stop_seq = item.to_seq
+        JOIN seat_type ON seat_type.id = item.seat_type_id
+        LEFT JOIN train_seat seat ON seat.id = item.seat_id
+        LEFT JOIN train_coach coach ON coach.id = seat.coach_id
+        WHERE item.id = #{ticketId} AND orders.user_id = #{userId}
+        LIMIT 1 FOR UPDATE
+    </select>
+
+    <select id="selectByClientRequestId" resultType="com.example.railgo.data.po.TicketChange">
+        SELECT * FROM change_record
+        WHERE user_id = #{userId} AND client_request_id = #{clientRequestId}
+        LIMIT 1
+    </select>
+
+    <select id="selectOwnedChangeForUpdate" resultType="com.example.railgo.data.po.TicketChange">
+        SELECT * FROM change_record
+        WHERE id = #{changeId} AND user_id = #{userId}
+        LIMIT 1 FOR UPDATE
+    </select>
+
+    <select id="countSuccessfulChanges" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM change_record
+        WHERE old_order_item_id = #{oldTicketId} AND status = 'COMPLETED'
+    </select>
+
+    <select id="countActiveChanges" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM change_record
+        WHERE old_order_item_id = #{oldTicketId}
+          AND status IN ('WAITING_CONFIRMATION', 'WAITING_PAYMENT')
+          AND expire_at &gt; NOW()
+    </select>
+
+    <select id="countOtherTravelConflict" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM order_item item
+        JOIN ticket_order orders ON orders.id = item.order_id
+        JOIN train_run run ON run.id = item.run_id
+        JOIN train_stop from_stop ON from_stop.train_id = run.train_id AND from_stop.stop_seq = item.from_seq
+        JOIN train_stop to_stop ON to_stop.train_id = run.train_id AND to_stop.stop_seq = item.to_seq
+        WHERE orders.user_id = #{userId}
+          AND item.passenger_id = #{passengerId}
+          AND item.id &lt;&gt; #{excludedTicketId}
+          AND item.status IN ('LOCKED', 'ISSUED', 'CHANGE_LOCKED')
+          AND (orders.status &lt;&gt; 'PENDING_PAYMENT' OR orders.expire_at &gt; NOW())
+          AND #{departureDateTime} &lt;
+              TIMESTAMP(DATE_ADD(run.run_date, INTERVAL to_stop.arrival_day_offset DAY), to_stop.arrival_time)
+          AND #{arrivalDateTime} &gt;
+              TIMESTAMP(DATE_ADD(run.run_date, INTERVAL from_stop.departure_day_offset DAY), from_stop.departure_time)
+    </select>
+
+    <select id="selectChangeOptions" resultType="com.example.railgo.data.vo.ChangeOptionResponse">
+        SELECT candidate.run_id, candidate.train_no, candidate.train_type,
+               candidate.from_station_id, candidate.from_station_name,
+               candidate.to_station_id, candidate.to_station_name,
+               candidate.departure_date_time, candidate.arrival_date_time,
+               seat_type.code AS seat_type_code, seat_type.name AS seat_type_name,
+               fare.price,
+               (SELECT COUNT(*)
+                FROM train_seat seat
+                JOIN train_coach coach ON coach.id = seat.coach_id
+                WHERE coach.train_id = candidate.train_id
+                  AND coach.seat_type_id = seat_type.id
+                  AND (SELECT COUNT(*)
+                       FROM seat_segment_inventory inventory
+                       WHERE inventory.seat_id = seat.id
+                         AND inventory.run_id = candidate.run_id
+                         AND inventory.segment_seq &gt;= candidate.from_seq
+                         AND inventory.segment_seq &lt; candidate.to_seq
+                         AND inventory.status = 'AVAILABLE')
+                      = candidate.to_seq - candidate.from_seq) AS available_count
+        FROM (
+            SELECT new_run.id AS run_id, new_run.train_id, train.train_no, train.train_type,
+                   old_item.from_station_id, from_station.name AS from_station_name,
+                   old_item.to_station_id, to_station.name AS to_station_name,
+                   from_stop.stop_seq AS from_seq, to_stop.stop_seq AS to_seq,
+                   TIMESTAMP(DATE_ADD(new_run.run_date, INTERVAL from_stop.departure_day_offset DAY),
+                             from_stop.departure_time) AS departure_date_time,
+                   TIMESTAMP(DATE_ADD(new_run.run_date, INTERVAL to_stop.arrival_day_offset DAY),
+                             to_stop.arrival_time) AS arrival_date_time
+            FROM order_item old_item
+            JOIN ticket_order orders ON orders.id = old_item.order_id AND orders.user_id = #{userId}
+            JOIN station from_station ON from_station.id = old_item.from_station_id
+            JOIN station to_station ON to_station.id = old_item.to_station_id
+            JOIN train_stop from_stop ON from_stop.station_id = old_item.from_station_id
+            JOIN train_stop to_stop ON to_stop.train_id = from_stop.train_id
+                                    AND to_stop.station_id = old_item.to_station_id
+                                    AND to_stop.stop_seq &gt; from_stop.stop_seq
+            JOIN train_run new_run ON new_run.train_id = from_stop.train_id
+                                  AND new_run.run_date = #{travelDate}
+                                  AND new_run.sale_status = 'ON_SALE'
+                                  AND new_run.inventory_initialized = 1
+            JOIN train ON train.id = new_run.train_id AND train.status = 'ACTIVE'
+            WHERE old_item.id = #{ticketId}
+              AND old_item.status = 'ISSUED'
+              AND TIMESTAMP(DATE_ADD(new_run.run_date, INTERVAL from_stop.departure_day_offset DAY),
+                            from_stop.departure_time) &gt; NOW()
+        ) candidate
+        JOIN train_fare fare ON fare.train_id = candidate.train_id
+                            AND fare.from_seq = candidate.from_seq
+                            AND fare.to_seq = candidate.to_seq
+        JOIN seat_type ON seat_type.id = fare.seat_type_id
+        ORDER BY candidate.departure_date_time, seat_type.sort_no
+    </select>
+
+    <select id="selectChangeDetail" resultType="com.example.railgo.data.vo.ChangeDetailResponse">
+        SELECT change_record.id AS change_id, change_record.change_no, change_record.status,
+               old_item.id AS old_ticket_id, new_item.id AS new_ticket_id,
+               old_item.passenger_id, passenger.name AS passenger_name,
+               old_item.run_id AS old_run_id, old_train.train_no AS old_train_no,
+               old_type.code AS old_seat_type_code, old_coach.coach_no AS old_coach_no,
+               old_seat.seat_no AS old_seat_no,
+               new_item.run_id AS new_run_id, new_train.train_no AS new_train_no,
+               new_type.code AS new_seat_type_code, new_coach.coach_no AS new_coach_no,
+               new_seat.seat_no AS new_seat_no,
+               new_item.from_station_id, from_station.name AS from_station_name,
+               new_item.to_station_id, to_station.name AS to_station_name,
+               TIMESTAMP(DATE_ADD(new_run.run_date, INTERVAL new_from.departure_day_offset DAY),
+                         new_from.departure_time) AS new_departure_date_time,
+               TIMESTAMP(DATE_ADD(new_run.run_date, INTERVAL new_to.arrival_day_offset DAY),
+                         new_to.arrival_time) AS new_arrival_date_time,
+               change_record.original_amount, change_record.new_amount,
+               change_record.difference_amount, change_record.difference_type,
+               change_record.expire_at, change_record.confirmed_at,
+               change_record.cancelled_at, change_record.created_at
+        FROM change_record change_record
+        JOIN order_item old_item ON old_item.id = change_record.old_order_item_id
+        JOIN order_item new_item ON new_item.id = change_record.new_order_item_id
+        JOIN passenger ON passenger.id = old_item.passenger_id
+        JOIN train_run old_run ON old_run.id = old_item.run_id
+        JOIN train old_train ON old_train.id = old_run.train_id
+        JOIN seat_type old_type ON old_type.id = old_item.seat_type_id
+        LEFT JOIN train_seat old_seat ON old_seat.id = old_item.seat_id
+        LEFT JOIN train_coach old_coach ON old_coach.id = old_seat.coach_id
+        JOIN train_run new_run ON new_run.id = new_item.run_id
+        JOIN train new_train ON new_train.id = new_run.train_id
+        JOIN seat_type new_type ON new_type.id = new_item.seat_type_id
+        LEFT JOIN train_seat new_seat ON new_seat.id = new_item.seat_id
+        LEFT JOIN train_coach new_coach ON new_coach.id = new_seat.coach_id
+        JOIN station from_station ON from_station.id = new_item.from_station_id
+        JOIN station to_station ON to_station.id = new_item.to_station_id
+        JOIN train_stop new_from ON new_from.train_id = new_run.train_id
+                                AND new_from.stop_seq = new_item.from_seq
+        JOIN train_stop new_to ON new_to.train_id = new_run.train_id
+                              AND new_to.stop_seq = new_item.to_seq
+        WHERE change_record.id = #{changeId} AND change_record.user_id = #{userId}
+        LIMIT 1
+    </select>
+
+    <select id="selectExpiredChangeIds" resultType="java.lang.Long">
+        SELECT id FROM change_record
+        WHERE status IN ('WAITING_CONFIRMATION', 'WAITING_PAYMENT') AND expire_at &lt;= NOW()
+        ORDER BY expire_at LIMIT #{limit}
+    </select>
+
+    <update id="updateStatusIfExpected">
+        UPDATE change_record SET status = #{newStatus},
+            cancelled_at = CASE WHEN #{newStatus} IN ('CANCELLED', 'EXPIRED') THEN NOW() ELSE cancelled_at END,
+            updated_at = NOW()
+        WHERE id = #{changeId} AND status = #{expectedStatus}
+    </update>
+
+    <update id="updateOrderAmount">
+        UPDATE ticket_order
+        SET total_amount = total_amount + #{differenceAmount}, updated_at = NOW()
+        WHERE id = #{orderId}
+    </update>
+</mapper>

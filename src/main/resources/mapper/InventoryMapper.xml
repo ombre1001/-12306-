@@ -100,4 +100,18 @@
         WHERE item.order_id = #{orderId}
         AND inventory.status = 'LOCKED'
     </update>
+
+    <update id="sellLockedOrderItemSegments">
+        UPDATE seat_segment_inventory
+        SET status = 'SOLD', lock_expire_at = NULL,
+            version = version + 1, updated_at = NOW()
+        WHERE order_item_id = #{orderItemId} AND status = 'LOCKED'
+    </update>
+
+    <update id="releaseSoldOrderItemSegments">
+        UPDATE seat_segment_inventory
+        SET status = 'AVAILABLE', order_item_id = NULL, lock_expire_at = NULL,
+            version = version + 1, updated_at = NOW()
+        WHERE order_item_id = #{orderItemId} AND status = 'SOLD'
+    </update>
 </mapper>

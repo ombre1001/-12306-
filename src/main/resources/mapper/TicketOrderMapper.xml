@@ -66,6 +66,17 @@
             COUNT(item.id) AS ticket_count
         FROM ticket_order orders
         JOIN order_item item ON item.order_id = orders.id
+          AND NOT EXISTS (
+              SELECT 1 FROM change_record current_change
+              WHERE current_change.old_order_item_id = item.id
+                AND current_change.status = 'COMPLETED'
+          )
+          AND NOT (
+              item.status = 'CANCELLED' AND EXISTS (
+                  SELECT 1 FROM change_record abandoned_change
+                  WHERE abandoned_change.new_order_item_id = item.id
+              )
+          )
         JOIN train_run run ON run.id = item.run_id
         JOIN train ON train.id = run.train_id
         JOIN train_stop from_stop ON from_stop.train_id = run.train_id AND from_stop.stop_seq = item.from_seq

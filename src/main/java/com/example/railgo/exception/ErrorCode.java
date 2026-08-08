@@ -16,6 +16,7 @@ public enum ErrorCode {
     INSUFFICIENT_TICKETS(40012, HttpStatus.BAD_REQUEST, "所选席别余票不足，请重新选择"),
     SEAT_LOCK_FAILED(40013, HttpStatus.BAD_REQUEST, "锁座失败，请重新查询"),
     ORDER_EXPIRED(40014, HttpStatus.BAD_REQUEST, "订单已超时"),
+    CHANGE_EXPIRED(40015, HttpStatus.BAD_REQUEST, "改签申请已超时"),
 
     VERIFICATION_CODE_ERROR(40003, HttpStatus.BAD_REQUEST, "验证码错误或已失效"),
 
@@ -44,6 +45,12 @@ public enum ErrorCode {
     INVENTORY_NOT_INITIALIZED(40911, HttpStatus.CONFLICT, "该运行实例尚未初始化库存"),
     INVENTORY_INIT_STATUS_INVALID(40912, HttpStatus.CONFLICT, "当前运行状态不允许初始化库存"),
     TRAIN_STOP_NOT_ENOUGH(40913, HttpStatus.CONFLICT, "车次经停站不足，无法生成区间库存"),
+    TICKET_CHANGE_NOT_ALLOWED(40931, HttpStatus.CONFLICT, "当前车票不允许改签"),
+    TICKET_ALREADY_CHANGED(40932, HttpStatus.CONFLICT, "该车票已经成功改签过一次"),
+    CHANGE_ALREADY_PROCESSING(40933, HttpStatus.CONFLICT, "该车票存在未完成的改签申请"),
+    CHANGE_STATUS_INVALID(40934, HttpStatus.CONFLICT, "当前改签状态不允许执行此操作"),
+    CHANGE_PAYMENT_NOT_REQUIRED(40935, HttpStatus.CONFLICT, "该改签无需补款"),
+    CHANGE_DUPLICATE_REQUEST(40936, HttpStatus.CONFLICT, "请勿重复提交改签申请"),
 
     PHONE_EXISTS(40905, HttpStatus.CONFLICT, "手机号已注册"),
 
@@ -64,6 +71,8 @@ public enum ErrorCode {
     ORDER_ITEM_CREATE_FAILED(50013, HttpStatus.INTERNAL_SERVER_ERROR, "订单明细创建失败"),
     ORDER_ITEM_UPDATE_FAILED(50014, HttpStatus.INTERNAL_SERVER_ERROR, "订单明细更新失败"),
     ORDER_CANCEL_FAILED(50015, HttpStatus.INTERNAL_SERVER_ERROR, "订单取消失败"),
+    CHANGE_CREATE_FAILED(50016, HttpStatus.INTERNAL_SERVER_ERROR, "改签申请创建失败"),
+    CHANGE_CONFIRM_FAILED(50017, HttpStatus.INTERNAL_SERVER_ERROR, "改签确认失败"),
 
     // 管理端车站
     STATION_NOT_FOUND(40421, HttpStatus.NOT_FOUND, "车站不存在"),
