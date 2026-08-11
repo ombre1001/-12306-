@@ -474,7 +474,6 @@ public class AdminTrainService {
     private void validateStops(
             List<AdminTrainStopsRequest.StopItem> stops
     ) {
-        Set<Long> stationIds = new HashSet<>();
         Integer previousDistance = null;
         LocalDateTime previousTime = null;
 
@@ -502,13 +501,6 @@ public class AdminTrainService {
                         ErrorCode.STATION_NOT_FOUND,
                         "站序" + item.stopSeq()
                                 + "对应车站不存在或已停用"
-                );
-            }
-
-            if (!stationIds.add(item.stationId())) {
-                throw new BusinessException(
-                        ErrorCode.TRAIN_STOP_INVALID,
-                        "同一车次不能重复经过同一车站"
                 );
             }
 
