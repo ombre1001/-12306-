@@ -22,6 +22,17 @@ public class TrainSyncProperties {
     private String trainInfoUrl =
             "https://kyfw.12306.cn/otn/queryTrainInfo/query";
 
+    /** 每个热门区间最多选取的车次数。 */
+    private int trainsPerRoute = 3;
+
+    /** 每个运行日期最多同步的车次数，防止热门区间返回几百趟车。 */
+    private int maxTrainsPerDay = 36;
+
+    /** 演示环境只同步高铁、动车和城际列车。 */
+    private List<String> trainTypes = new ArrayList<>(
+            List.of("G", "D", "C")
+    );
+
     /** 格式：起点三字码-终点三字码，例如 JNK-BJP。 */
     private List<String> routes = new ArrayList<>();
 }

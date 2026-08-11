@@ -9,23 +9,25 @@ import com.example.railgo.data.vo.TrainSyncSummary;
 import com.example.railgo.mapper.TrainSyncLogMapper;
 import com.example.railgo.service.source.SourceStop;
 import com.example.railgo.service.source.SourceTrain;
+import com.zaxxer.hikari.HikariDataSource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import com.zaxxer.hikari.HikariDataSource;
-import java.sql.PreparedStatement;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -50,11 +52,12 @@ public class TrainSyncService {
         int failedDays = 0;
         int trainCount = 0;
         int stopCount = 0;
+        Map<String, List<SourceStop>> stopCache = new HashMap<>();
         try {
             for (LocalDate date = start;
                  !date.isAfter(end);
                  date = date.plusDays(1)) {
-                DayResult dayResult = syncDate(date);
+                DayResult dayResult = syncDate(date, stopCache);
                 if (dayResult.success()) {
                     successDays++;
                 } else {
@@ -80,7 +83,10 @@ public class TrainSyncService {
         );
     }
 
-    private DayResult syncDate(LocalDate date) {
+    private DayResult syncDate(
+            LocalDate date,
+            Map<String, List<SourceStop>> stopCache
+    ) {
         TrainSyncLog syncLog = new TrainSyncLog();
         syncLog.setBatchId(UUID.randomUUID().toString());
         syncLog.setSource(SOURCE);
@@ -93,26 +99,51 @@ public class TrainSyncService {
 
         Map<String, SourceTrain> discovered = new LinkedHashMap<>();
         List<String> errors = new ArrayList<>();
+        Set<String> allowedTypes = normalizedTrainTypes();
 
         for (String route : properties.getRoutes()) {
+            if (discovered.size() >= properties.getMaxTrainsPerDay()) {
+                break;
+            }
+
             try {
                 String[] codes = parseRoute(route);
-                for (SourceTrain train : sourceClient.queryTrains(
-                        date, codes[0], codes[1])) {
-                    discovered.putIfAbsent(train.sourceTrainCode(), train);
-                }
+                addRouteTrains(
+                        discovered,
+                        sourceClient.queryTrains(date, codes[0], codes[1]),
+                        allowedTypes
+                );
             } catch (Exception exception) {
                 errors.add(route + "：" + rootMessage(exception));
             }
+        }
+
+        if (discovered.isEmpty()) {
+            errors.add("未从热门区间中匹配到可同步的演示车次");
+        } else {
+            log.info(
+                    "日期{}选中{}趟演示车次：{}",
+                    date,
+                    discovered.size(),
+                    discovered.values().stream()
+                            .map(SourceTrain::trainNo)
+                            .toList()
+            );
         }
 
         int mergedTrains = 0;
         int mergedStops = 0;
         for (SourceTrain train : discovered.values()) {
             try {
-                List<SourceStop> stops = sourceClient.queryStops(
-                        date, train.sourceTrainCode()
+                List<SourceStop> stops = stopCache.get(
+                        train.sourceTrainCode()
                 );
+                if (stops == null) {
+                    stops = List.copyOf(sourceClient.queryStops(
+                            date, train.sourceTrainCode()
+                    ));
+                    stopCache.put(train.sourceTrainCode(), stops);
+                }
                 TrainSyncMergeService.MergeResult result =
                         mergeService.merge(date, train, stops);
                 mergedTrains++;
@@ -138,6 +169,68 @@ public class TrainSyncService {
         );
     }
 
+    /**
+     * 每个热门区间只选择少量车次，并使用全局上限限制一天的同步规模。
+     * LinkedHashMap 同时完成去重：同一趟车可能被多个热门区间查询到，
+     * 但经停站只会抓取和合并一次。
+     */
+    private void addRouteTrains(
+            Map<String, SourceTrain> discovered,
+            List<SourceTrain> routeTrains,
+            Set<String> allowedTypes
+    ) {
+        List<SourceTrain> candidates = new ArrayList<>();
+        for (SourceTrain train : routeTrains) {
+            String type = normalize(train.trainType());
+            if (allowedTypes.contains(type)
+                    && !discovered.containsKey(train.sourceTrainCode())) {
+                candidates.add(train);
+            }
+        }
+
+        int remaining = properties.getMaxTrainsPerDay()
+                - discovered.size();
+        int selectedCount = Math.min(
+                Math.min(properties.getTrainsPerRoute(), remaining),
+                candidates.size()
+        );
+
+        /*
+         * 12306余票查询结果通常按出发时间排列。这里从整天结果中
+         * 均匀抽样，而不是只拿最早几趟，使同区间车次的时刻具有间隔，
+         * 更容易演示改签和30～240分钟的一次换乘。
+         */
+        for (int index = 0; index < selectedCount; index++) {
+            int candidateIndex = (int) Math.floor(
+                    (index + 0.5D) * candidates.size() / selectedCount
+            );
+            SourceTrain selected = candidates.get(
+                    Math.min(candidateIndex, candidates.size() - 1)
+            );
+            discovered.put(selected.sourceTrainCode(), selected);
+        }
+    }
+
+    private Set<String> normalizedTrainTypes() {
+        Set<String> result = new HashSet<>();
+        if (properties.getTrainTypes() == null) {
+            return result;
+        }
+        for (String type : properties.getTrainTypes()) {
+            String normalized = normalize(type);
+            if (!normalized.isBlank()) {
+                result.add(normalized);
+            }
+        }
+        return result;
+    }
+
+    private String normalize(String value) {
+        return value == null
+                ? ""
+                : value.trim().toUpperCase(Locale.ROOT);
+    }
+
     private String[] parseRoute(String route) {
         String[] codes = route == null
                 ? new String[0]
@@ -153,8 +246,21 @@ public class TrainSyncService {
     }
 
     private void validate(LocalDate start, LocalDate end) {
-        if (properties.getRoutes().isEmpty()) {
+        if (properties.getRoutes() == null
+                || properties.getRoutes().isEmpty()) {
             throw new IllegalStateException("未配置app.train-sync.routes");
+        }
+        if (normalizedTrainTypes().isEmpty()) {
+            throw new IllegalStateException("未配置app.train-sync.train-types");
+        }
+        if (properties.getTrainsPerRoute() < 1
+                || properties.getMaxTrainsPerDay() < 1
+                || properties.getTrainsPerRoute()
+                > properties.getMaxTrainsPerDay()) {
+            throw new IllegalStateException(
+                    "车次同步数量配置不合法：trains-per-route必须大于0，"
+                            + "且不能超过max-trains-per-day"
+            );
         }
         if (start == null || end == null || start.isAfter(end)
                 || end.isAfter(start.plusDays(30))) {
