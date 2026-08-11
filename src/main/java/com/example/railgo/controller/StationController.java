@@ -63,7 +63,7 @@ public class StationController {
 
     @Operation(
             summary = "查询热门车站",
-            description = "按照hotScore从高到低返回热门客运车站"
+            description = "返回最近30天支付成功车票中购票次数最多的出发站和到达站"
     )
     @GetMapping("/hot")
     public ResponseEntity<

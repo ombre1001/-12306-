@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.railgo.mapper.StationMapper">
+
+    <!--
+        最近购买最多的车站：
+
+        1. payment_record.status = SUCCESS：
+           只统计真实支付成功的订单。
+
+        2. 使用 payment_record.paid_at：
+           按实际支付时间判断是否属于最近购买。
+
+        3. ISSUED、REFUNDED、CHANGED：
+           这些订单项都曾经支付成功。
+           LOCKED、CHANGE_LOCKED、CANCELLED 不统计。
+
+        4. 出发站和到达站分别计一次。
+
+        5. 同一个订单即使异常存在多条成功支付流水，
+           successful_payment 子查询也只保留一条。
+    -->
+    <select id="selectRecentlyPurchasedHotStations"
+            resultType="com.example.railgo.data.po.Station">
+
+        SELECT station.*
+        FROM station
+        INNER JOIN
+        (
+        SELECT
+        station_purchase.station_id,
+        COUNT(*) AS purchase_count,
+        MAX(station_purchase.paid_at)
+        AS last_purchased_at
+        FROM
+        (
+        SELECT
+        item.from_station_id AS station_id,
+        payment.paid_at
+        FROM order_item item
+        INNER JOIN
+        (
+        SELECT
+        order_id,
+        MAX(paid_at) AS paid_at
+        FROM payment_record
+        WHERE status = 'SUCCESS'
+        AND paid_at IS NOT NULL
+        AND paid_at >=
+        TIMESTAMPADD(
+        DAY,
+        -#{recentDays},
+        NOW()
+        )
+        GROUP BY order_id
+        ) payment
+        ON payment.order_id = item.order_id
+        WHERE item.status IN (
+        'ISSUED',
+        'REFUNDED',
+        'CHANGED'
+        )
+
+        UNION ALL
+
+        SELECT
+        item.to_station_id AS station_id,
+        payment.paid_at
+        FROM order_item item
+        INNER JOIN
+        (
+        SELECT
+        order_id,
+        MAX(paid_at) AS paid_at
+        FROM payment_record
+        WHERE status = 'SUCCESS'
+        AND paid_at IS NOT NULL
+        AND paid_at >=
+        TIMESTAMPADD(
+        DAY,
+        -#{recentDays},
+        NOW()
+        )
+        GROUP BY order_id
+        ) payment
+        ON payment.order_id = item.order_id
+        WHERE item.status IN (
+        'ISSUED',
+        'REFUNDED',
+        'CHANGED'
+        )
+        ) station_purchase
+        GROUP BY station_purchase.station_id
+        ) purchase_statistics
+        ON purchase_statistics.station_id = station.id
+        WHERE station.status = 'ACTIVE'
+        AND station.passenger_service = 1
+        ORDER BY
+        purchase_statistics.purchase_count DESC,
+        purchase_statistics.last_purchased_at DESC,
+        station.name ASC
+        LIMIT #{limit}
+
+    </select>
+
+</mapper>

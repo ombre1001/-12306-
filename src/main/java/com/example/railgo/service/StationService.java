@@ -22,6 +22,8 @@ public class StationService {
 
     private final StationMapper stationMapper;
 
+    private static final int HOT_STATION_RECENT_DAYS = 30;
+
     /**
      * 根据中文、拼音、拼音首字母联想车站。
      */
@@ -107,28 +109,21 @@ public class StationService {
     /**
      * 查询热门客运车站。
      */
+    /**
+     * 查询最近30天购买次数最多的车站。
+     *
+     * 根据支付成功的订单项动态统计，
+     * 不再读取 station.hot_score。
+     */
     public List<StationSummaryResponse> getHotStations(
             int limit) {
 
         List<Station> stations =
-                stationMapper.selectList(
-                        Wrappers.<Station>lambdaQuery()
-                                .eq(
-                                        Station::getStatus,
-                                        ACTIVE_STATUS
-                                )
-                                .eq(
-                                        Station::getPassengerService,
-                                        true
-                                )
-                                .orderByDesc(
-                                        Station::getHotScore
-                                )
-                                .orderByAsc(
-                                        Station::getName
-                                )
-                                .last("LIMIT " + limit)
-                );
+                stationMapper
+                        .selectRecentlyPurchasedHotStations(
+                                HOT_STATION_RECENT_DAYS,
+                                limit
+                        );
 
         return stations.stream()
                 .map(this::toSummary)
