@@ -12,6 +12,8 @@ import com.example.railgo.service.source.SourceTrain;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import com.zaxxer.hikari.HikariDataSource;
+import java.sql.PreparedStatement;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -32,6 +34,7 @@ import java.util.UUID;
 public class TrainSyncService {
 
     private static final String SOURCE = "12306_PUBLIC_QUERY";
+    private static final String SYNC_LOCK_NAME = "railgo_train_sync";
 
     private final TrainSyncProperties properties;
     private final TrainSourceClient sourceClient;
@@ -170,29 +173,58 @@ public class TrainSyncService {
 
     private Connection acquireLock() {
         Connection connection = null;
+
         try {
             connection = dataSource.getConnection();
-            try (Statement statement = connection.createStatement();
-                 ResultSet resultSet = statement.executeQuery(
-                         "SELECT GET_LOCK('railgo_train_sync', 0)")) {
-                if (resultSet.next() && resultSet.getInt(1) == 1) {
-                    return connection;
+
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT GET_LOCK(?, 0)"
+            )) {
+                statement.setString(1, SYNC_LOCK_NAME);
+
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (!resultSet.next()) {
+                        discardConnection(connection);
+                        connection = null;
+                        throw new IllegalStateException("获取车次同步数据库锁没有返回结果");
+                    }
+
+                    Object value = resultSet.getObject(1);
+
+                    if (value instanceof Number number
+                            && number.intValue() == 1) {
+                        log.info(
+                                "已获得车次同步数据库锁，connectionId={}",
+                                queryConnectionId(connection)
+                        );
+                        return connection;
+                    }
+
+                    if (value instanceof Number number
+                            && number.intValue() == 0) {
+                        closeQuietly(connection);
+                        connection = null;
+                        throw new IllegalStateException("已有车次同步任务正在执行");
+                    }
+
+                    discardConnection(connection);
+                    connection = null;
+                    throw new IllegalStateException("获取车次同步数据库锁返回NULL");
                 }
             }
-            connection.close();
-            throw new IllegalStateException("已有车次同步任务正在执行");
+        } catch (IllegalStateException exception) {
+            if (connection != null) {
+                discardConnection(connection);
+            }
+            throw exception;
         } catch (Exception exception) {
             if (connection != null) {
-                try {
-                    connection.close();
-                } catch (Exception closeException) {
-                    exception.addSuppressed(closeException);
-                }
+                discardConnection(connection);
             }
-            if (exception instanceof IllegalStateException stateException) {
-                throw stateException;
-            }
-            throw new IllegalStateException("获取车次同步数据库锁失败", exception);
+            throw new IllegalStateException(
+                    "获取车次同步数据库锁失败",
+                    exception
+            );
         }
     }
 
@@ -200,13 +232,94 @@ public class TrainSyncService {
         if (connection == null) {
             return;
         }
-        try (connection;
-             Statement statement = connection.createStatement()) {
-            statement.executeQuery(
-                    "SELECT RELEASE_LOCK('railgo_train_sync')"
-            ).close();
+
+        boolean released = false;
+
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT RELEASE_LOCK(?)"
+        )) {
+            statement.setString(1, SYNC_LOCK_NAME);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (resultSet.next()) {
+                    Object value = resultSet.getObject(1);
+                    released = value instanceof Number number
+                            && number.intValue() == 1;
+                }
+            }
+
+            if (released) {
+                log.info("车次同步数据库锁已正常释放");
+            } else {
+                log.error(
+                        "RELEASE_LOCK未成功，准备销毁持锁物理连接"
+                );
+            }
         } catch (Exception exception) {
-            log.warn("释放车次同步数据库锁失败", exception);
+            log.error(
+                    "释放车次同步数据库锁异常，准备销毁持锁物理连接",
+                    exception
+            );
+        } finally {
+            if (released) {
+                closeQuietly(connection);
+            } else {
+                /*
+                 * 不能只调用connection.close()。
+                 * 对Hikari代理连接而言，close可能只是归还连接池，
+                 * 物理连接继续存在，命名锁也会继续存在。
+                 */
+                discardConnection(connection);
+            }
+        }
+    }
+
+    private long queryConnectionId(Connection connection) {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT CONNECTION_ID()"
+        );
+             ResultSet resultSet = statement.executeQuery()) {
+
+            if (resultSet.next()) {
+                return resultSet.getLong(1);
+            }
+        } catch (Exception exception) {
+            log.warn("查询持锁连接ID失败", exception);
+        }
+
+        return -1L;
+    }
+
+    private void closeQuietly(Connection connection) {
+        if (connection == null) {
+            return;
+        }
+
+        try {
+            connection.close();
+        } catch (Exception exception) {
+            log.warn("关闭数据库连接失败", exception);
+        }
+    }
+
+    private void discardConnection(Connection connection) {
+        if (connection == null) {
+            return;
+        }
+
+        try {
+            if (dataSource instanceof HikariDataSource hikariDataSource) {
+                /*
+                 * 将连接标记为驱逐。
+                 * 连接归还连接池时会关闭底层MySQL物理连接，
+                 * MySQL随后自动释放该连接持有的命名锁。
+                 */
+                hikariDataSource.evictConnection(connection);
+            }
+        } catch (Exception exception) {
+            log.error("驱逐持锁数据库连接失败", exception);
+        } finally {
+            closeQuietly(connection);
         }
     }
 
