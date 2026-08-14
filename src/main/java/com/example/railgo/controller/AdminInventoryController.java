@@ -1,12 +1,16 @@
 package com.example.railgo.controller;
 
+import com.example.railgo.data.dto.AdminInventoryBatchInitRequest;
+import com.example.railgo.data.dto.AdminInventoryBatchInitResult;
 import com.example.railgo.data.vo.InventorySummaryResponse;
 import com.example.railgo.data.vo.Result;
+import com.example.railgo.service.AdminTrainRunService;
 import com.example.railgo.service.InventoryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -15,6 +19,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -28,6 +33,17 @@ import java.util.List;
 @PreAuthorize("hasRole('SYSTEM_ADMIN') or hasAuthority('BUSINESS:RUN:WRITE')")
 public class AdminInventoryController {
     private final InventoryService inventoryService;
+    private final AdminTrainRunService adminTrainRunService;
+
+    @Operation(summary = "按车次和日期范围批量初始化区间库存")
+    @PostMapping("/inventory/init-batch")
+    public ResponseEntity<Result<AdminInventoryBatchInitResult>> initializeInventoryBatch(
+            @Valid @RequestBody AdminInventoryBatchInitRequest request) {
+        return Result.success(
+                adminTrainRunService.batchInitializeInventory(request),
+                "批量库存初始化完成"
+        );
+    }
 
     @Operation(summary = "初始化运行实例的区间库存")
     @PostMapping("/{runId}/inventory/init")

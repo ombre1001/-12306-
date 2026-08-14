@@ -3,21 +3,28 @@ package com.example.railgo.service;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.example.railgo.data.dto.AdminInventoryBatchInitRequest;
+import com.example.railgo.data.dto.AdminInventoryBatchInitResult;
 import com.example.railgo.data.dto.AdminRunBatchRequest;
 import com.example.railgo.data.po.Train;
 import com.example.railgo.data.po.TrainRun;
+import com.example.railgo.data.vo.admin.AdminTrainRunResponse;
 import com.example.railgo.exception.BusinessException;
 import com.example.railgo.exception.ErrorCode;
 import com.example.railgo.mapper.TrainMapper;
 import com.example.railgo.mapper.TrainRunMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AdminTrainRunService {
@@ -115,7 +122,7 @@ public class AdminTrainRunService {
         return created;
     }
 
-    public IPage<TrainRun> page(
+    public IPage<AdminTrainRunResponse> page(
             long page,
             long size,
             Long trainId,
@@ -123,32 +130,92 @@ public class AdminTrainRunService {
             LocalDate endDate,
             String saleStatus
     ) {
-        return trainRunMapper.selectPage(
+        String normalizedSaleStatus =
+                saleStatus == null || saleStatus.isBlank()
+                        ? null
+                        : saleStatus.trim().toUpperCase();
+
+        return trainRunMapper.selectAdminRunPage(
                 new Page<>(page, size),
+                trainId,
+                startDate,
+                endDate,
+                normalizedSaleStatus
+        );
+    }
+
+    public AdminInventoryBatchInitResult batchInitializeInventory(
+            AdminInventoryBatchInitRequest request
+    ) {
+        validateBatchInventoryDateRange(
+                request.startDate(),
+                request.endDate()
+        );
+
+        List<TrainRun> runs = trainRunMapper.selectList(
                 Wrappers.<TrainRun>lambdaQuery()
                         .eq(
-                                trainId != null,
+                                request.trainId() != null,
                                 TrainRun::getTrainId,
-                                trainId
+                                request.trainId()
                         )
                         .ge(
-                                startDate != null,
                                 TrainRun::getRunDate,
-                                startDate
+                                request.startDate()
                         )
                         .le(
-                                endDate != null,
                                 TrainRun::getRunDate,
-                                endDate
+                                request.endDate()
                         )
-                        .eq(
-                                saleStatus != null
-                                        && !saleStatus.isBlank(),
-                                TrainRun::getSaleStatus,
-                                saleStatus
-                        )
-                        .orderByDesc(TrainRun::getRunDate)
+                        .orderByAsc(TrainRun::getRunDate)
                         .orderByAsc(TrainRun::getTrainId)
+                        .orderByAsc(TrainRun::getId)
+        );
+
+        int initializedCount = 0;
+        int skippedCount = 0;
+        List<AdminInventoryBatchInitResult.FailureItem> failures =
+                new ArrayList<>();
+
+        for (TrainRun run : runs) {
+            if (Boolean.TRUE.equals(run.getInventoryInitialized())) {
+                skippedCount++;
+                continue;
+            }
+
+            if (!"DRAFT".equals(run.getSaleStatus())
+                    && !"NOT_ON_SALE".equals(run.getSaleStatus())) {
+                skippedCount++;
+                continue;
+            }
+
+            try {
+                /*
+                 * InventoryService 是独立 Spring Bean；每次调用都会进入其
+                 * @Transactional 方法，因此单个运行失败不会回滚其他运行。
+                 */
+                inventoryService.initializeInventory(run.getId());
+                initializedCount++;
+            } catch (BusinessException exception) {
+                failures.add(toBatchFailure(run, exception.getMessage()));
+            } catch (RuntimeException exception) {
+                log.error(
+                        "批量初始化库存失败: runId={}, trainId={}, runDate={}",
+                        run.getId(),
+                        run.getTrainId(),
+                        run.getRunDate(),
+                        exception
+                );
+                failures.add(toBatchFailure(run, "库存初始化失败，请查看后端日志"));
+            }
+        }
+
+        return new AdminInventoryBatchInitResult(
+                runs.size(),
+                initializedCount,
+                skippedCount,
+                failures.size(),
+                List.copyOf(failures)
         );
     }
 
@@ -217,6 +284,40 @@ public class AdminTrainRunService {
         }
 
         return run;
+    }
+
+    private void validateBatchInventoryDateRange(
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
+        if (startDate.isAfter(endDate)) {
+            throw new BusinessException(
+                    ErrorCode.RUN_DATE_RANGE_INVALID,
+                    "开始日期不能晚于结束日期"
+            );
+        }
+
+        if (ChronoUnit.DAYS.between(startDate, endDate) > 366) {
+            throw new BusinessException(
+                    ErrorCode.RUN_DATE_RANGE_INVALID,
+                    "一次最多初始化367天的运行库存"
+            );
+        }
+    }
+
+    private AdminInventoryBatchInitResult.FailureItem toBatchFailure(
+            TrainRun run,
+            String reason
+    ) {
+        Train train = trainMapper.selectById(run.getTrainId());
+
+        return new AdminInventoryBatchInitResult.FailureItem(
+                run.getId(),
+                run.getTrainId(),
+                train == null ? null : train.getTrainNo(),
+                run.getRunDate(),
+                reason
+        );
     }
 
     private boolean canTransition(

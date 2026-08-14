@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import com.example.railgo.data.vo.admin.AdminTrainRunResponse;
 
 import java.time.LocalDate;
 import java.util.Map;
@@ -44,7 +45,7 @@ public class AdminTrainRunController {
     }
 
     @GetMapping
-    public ResponseEntity<Result<IPage<TrainRun>>> page(
+    public ResponseEntity<Result<IPage<AdminTrainRunResponse>>> page(
             @RequestParam(defaultValue = "1")
             @Min(1) long page,
 

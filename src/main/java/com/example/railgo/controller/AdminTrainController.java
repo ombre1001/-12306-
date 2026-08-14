@@ -178,7 +178,7 @@ public class AdminTrainController {
     ) {
         return Result.success(
                 adminTrainService.initializeAllTrainSeats(request),
-                "所有车次车厢和座位初始化完成"
+                "爬虫同步车次的车厢和座位初始化完成"
         );
     }
 }
