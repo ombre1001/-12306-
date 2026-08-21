@@ -7,12 +7,12 @@ import com.example.railgo.data.dto.LogoutRequest;
 import com.example.railgo.data.dto.RefreshTokenRequest;
 import com.example.railgo.data.dto.RegisterRequest;
 import com.example.railgo.data.po.AuthRefreshToken;
-import com.example.railgo.data.po.SysUser;
+import com.example.railgo.data.po.User;
 import com.example.railgo.data.vo.AuthResponse;
 import com.example.railgo.exception.BusinessException;
 import com.example.railgo.exception.ErrorCode;
 import com.example.railgo.mapper.AuthRefreshTokenMapper;
-import com.example.railgo.mapper.SysUserMapper;
+import com.example.railgo.mapper.UserMapper;
 import com.example.railgo.security.JwtTokenProvider;
 import com.example.railgo.security.TokenClaims;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +31,7 @@ public class AuthService {
     private static final String DEFAULT_ROLE =
             "PASSENGER";
 
-    private final SysUserMapper userMapper;
+    private final UserMapper userMapper;
 
     private final AuthRefreshTokenMapper
             refreshTokenMapper;
@@ -65,7 +65,7 @@ public class AuthService {
 
         LocalDateTime now = LocalDateTime.now();
 
-        SysUser user = new SysUser();
+        User user = new User();
 
         user.setPhone(request.phone());
 
@@ -119,7 +119,7 @@ public class AuthService {
                 request.phone()
         );
 
-        SysUser user = findByPhone(
+        User user = findByPhone(
                 request.phone()
         );
 
@@ -230,7 +230,7 @@ public class AuthService {
             );
         }
 
-        SysUser user = userMapper.selectById(
+        User user = userMapper.selectById(
                 claims.userId()
         );
 
@@ -305,7 +305,7 @@ public class AuthService {
     }
 
     private AuthResponse issueTokens(
-            SysUser user) {
+            User user) {
 
         List<String> roles =
                 userMapper
@@ -364,14 +364,14 @@ public class AuthService {
         );
     }
 
-    private SysUser findByPhone(
+    private User findByPhone(
             String phone) {
 
         return userMapper.selectOne(
                 Wrappers
-                        .<SysUser>lambdaQuery()
+                        .<User>lambdaQuery()
                         .eq(
-                                SysUser::getPhone,
+                                User::getPhone,
                                 phone
                         )
         );

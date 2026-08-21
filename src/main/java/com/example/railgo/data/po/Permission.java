@@ -8,25 +8,15 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("sys_user")
-public class SysUser {
-
+@TableName("permission")
+public class Permission {
     @TableId(type = IdType.AUTO)
     private Long id;
-
-    private String phone;
-
-    private String passwordHash;
-
-    private String nickname;
-
-    private String email;
-
+    private String permissionCode;
+    private String permissionName;
+    private String module;
+    private String description;
     private String status;
-
-    private LocalDateTime lastLoginAt;
-
     private LocalDateTime createdAt;
-
     private LocalDateTime updatedAt;
 }

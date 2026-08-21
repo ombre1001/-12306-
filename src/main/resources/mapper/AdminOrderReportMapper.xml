@@ -13,7 +13,7 @@
                COUNT(DISTINCT item.passenger_id) AS passenger_count,
                COUNT(DISTINCT item.id) AS ticket_count
         FROM ticket_order o
-        JOIN sys_user u ON u.id = o.user_id
+        JOIN user u ON u.id = o.user_id
         LEFT JOIN order_item item ON item.order_id = o.id
         LEFT JOIN train_run r ON r.id = item.run_id
         LEFT JOIN train t ON t.id = r.train_id
@@ -51,7 +51,7 @@
                u.phone AS user_phone, p.channel, p.amount, p.status, p.paid_at, p.created_at
         FROM payment_record p
         JOIN ticket_order o ON o.id = p.order_id
-        JOIN sys_user u ON u.id = o.user_id
+        JOIN user u ON u.id = o.user_id
         WHERE 1 = 1
         <if test="paymentNo != null and paymentNo != ''">AND p.payment_no LIKE CONCAT('%', #{paymentNo}, '%')</if>
         <if test="orderNo != null and orderNo != ''">AND o.order_no LIKE CONCAT('%', #{orderNo}, '%')</if>
@@ -70,7 +70,7 @@
         FROM refund_record rr
         JOIN ticket_return rtn ON rtn.id = rr.return_id
         JOIN ticket_order o ON o.id = rtn.order_id
-        JOIN sys_user u ON u.id = rtn.user_id
+        JOIN user u ON u.id = rtn.user_id
         WHERE 1 = 1
         <if test="refundNo != null and refundNo != ''">AND rr.refund_no LIKE CONCAT('%', #{refundNo}, '%')</if>
         <if test="orderNo != null and orderNo != ''">AND o.order_no LIKE CONCAT('%', #{orderNo}, '%')</if>
@@ -89,7 +89,7 @@
         FROM change_record c
         JOIN order_item old_item ON old_item.id = c.old_order_item_id
         JOIN ticket_order o ON o.id = old_item.order_id
-        JOIN sys_user u ON u.id = c.user_id
+        JOIN user u ON u.id = c.user_id
         JOIN train_run old_run ON old_run.id = old_item.run_id
         JOIN train old_train ON old_train.id = old_run.train_id
         JOIN order_item new_item ON new_item.id = c.new_order_item_id
@@ -254,13 +254,13 @@
 
     <select id="selectUserStatistics" resultType="com.example.railgo.data.vo.admin.AdminUserStatisticsResponse">
         SELECT
-          (SELECT COUNT(*) FROM sys_user u
+          (SELECT COUNT(*) FROM user u
            WHERE u.created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS total_users,
-          (SELECT COUNT(*) FROM sys_user u WHERE u.status = 'ENABLED'
+          (SELECT COUNT(*) FROM user u WHERE u.status = 'ENABLED'
            AND u.created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS enabled_users,
-          (SELECT COUNT(*) FROM sys_user u WHERE u.status &lt;&gt; 'ENABLED'
+          (SELECT COUNT(*) FROM user u WHERE u.status &lt;&gt; 'ENABLED'
            AND u.created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS disabled_users,
-          (SELECT COUNT(*) FROM sys_user u WHERE u.created_at &gt;= #{startDate}
+          (SELECT COUNT(*) FROM user u WHERE u.created_at &gt;= #{startDate}
            AND u.created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)) AS new_users,
           (SELECT COUNT(DISTINCT o.user_id) FROM payment_record p
            JOIN ticket_order o ON o.id = p.order_id

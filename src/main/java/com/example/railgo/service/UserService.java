@@ -3,12 +3,11 @@ package com.example.railgo.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.example.railgo.data.dto.UpdateProfileRequest;
-import com.example.railgo.data.po.SysUser;
+import com.example.railgo.data.po.User;
 import com.example.railgo.data.vo.UserProfileResponse;
 import com.example.railgo.mapper.AuthRefreshTokenMapper;
-import com.example.railgo.mapper.SysUserMapper;
+import com.example.railgo.mapper.UserMapper;
 import com.example.railgo.data.dto.ChangePasswordRequest;
-import com.example.railgo.data.dto.UpdateProfileRequest;
 import com.example.railgo.exception.BusinessException;
 import com.example.railgo.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -33,7 +32,7 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class UserService {
 
-    private final SysUserMapper userMapper;
+    private final UserMapper userMapper;
 
     private final AuthRefreshTokenMapper
             refreshTokenMapper;
@@ -58,7 +57,7 @@ public class UserService {
             Long userId,
             UpdateProfileRequest request) {
 
-        SysUser user = requireUser(userId);
+        User user = requireUser(userId);
 
         if (request.phone() != null
                 && !request.phone().equals(
@@ -71,13 +70,13 @@ public class UserService {
             );
 
             Long count = userMapper.selectCount(
-                    Wrappers.<SysUser>lambdaQuery()
+                    Wrappers.<User>lambdaQuery()
                             .eq(
-                                    SysUser::getPhone,
+                                    User::getPhone,
                                     request.phone()
                             )
                             .ne(
-                                    SysUser::getId,
+                                    User::getId,
                                     userId
                             )
             );
@@ -116,7 +115,7 @@ public class UserService {
             Long userId,
             ChangePasswordRequest request) {
 
-        SysUser user = requireUser(userId);
+        User user = requireUser(userId);
 
         if (!passwordEncoder.matches(
                 request.oldPassword(),
@@ -154,7 +153,7 @@ public class UserService {
     }
 
     public UserProfileResponse toProfile(
-            SysUser user) {
+            User user) {
 
         return new UserProfileResponse(
                 user.getId(),
@@ -169,9 +168,9 @@ public class UserService {
         );
     }
 
-    private SysUser requireUser(Long userId) {
+    private User requireUser(Long userId) {
 
-        SysUser user = userMapper.selectById(userId);
+        User user = userMapper.selectById(userId);
 
         if (user == null) {
             throw new BusinessException(

@@ -1,11 +1,11 @@
 package com.example.railgo.security;
 
 
-import com.example.railgo.data.po.SysUser;
+import com.example.railgo.data.po.User;
 import com.example.railgo.exception.BusinessException;
 import com.example.railgo.exception.ErrorCode;
 
-import com.example.railgo.mapper.SysUserMapper;
+import com.example.railgo.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -13,11 +13,11 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class UserSecurityService {
 
-    private final SysUserMapper userMapper;
+    private final UserMapper userMapper;
 
     public RailUserPrincipal loadPrincipal(Long userId) {
 
-        SysUser user = userMapper.selectById(userId);
+        User user = userMapper.selectById(userId);
 
         if (user == null) {
             throw new BusinessException(

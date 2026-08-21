@@ -5,9 +5,9 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.railgo.data.dto.*;
 import com.example.railgo.data.po.AuthRefreshToken;
-import com.example.railgo.data.po.SysPermission;
-import com.example.railgo.data.po.SysRole;
-import com.example.railgo.data.po.SysUser;
+import com.example.railgo.data.po.Permission;
+import com.example.railgo.data.po.Role;
+import com.example.railgo.data.po.User;
 import com.example.railgo.data.vo.admin.AdminUserResponse;
 import com.example.railgo.data.vo.admin.PermissionResponse;
 import com.example.railgo.data.vo.admin.RoleResponse;
@@ -32,32 +32,32 @@ public class AdminSecurityService {
     private static final Set<String> ADMIN_ROLES = Set.of("BUSINESS_ADMIN", "SYSTEM_ADMIN");
     private static final Set<String> STATUSES = Set.of("ENABLED", "DISABLED");
 
-    private final SysUserMapper userMapper;
-    private final SysRoleMapper roleMapper;
-    private final SysPermissionMapper permissionMapper;
+    private final UserMapper userMapper;
+    private final RoleMapper roleMapper;
+    private final PermissionMapper permissionMapper;
     private final AuthRefreshTokenMapper refreshTokenMapper;
     private final PasswordEncoder passwordEncoder;
 
     public IPage<AdminUserResponse> pageUsers(long page, long size, String keyword,
                                                String status, String roleCode) {
-        var query = Wrappers.<SysUser>lambdaQuery().orderByDesc(SysUser::getCreatedAt);
+        var query = Wrappers.<User>lambdaQuery().orderByDesc(User::getCreatedAt);
         if (StringUtils.hasText(keyword)) {
             String value = keyword.trim();
-            query.and(q -> q.like(SysUser::getPhone, value)
-                    .or().like(SysUser::getNickname, value)
-                    .or().like(SysUser::getEmail, value));
+            query.and(q -> q.like(User::getPhone, value)
+                    .or().like(User::getNickname, value)
+                    .or().like(User::getEmail, value));
         }
         if (StringUtils.hasText(status)) {
             String normalized = normalizeStatus(status);
-            query.eq(SysUser::getStatus, normalized);
+            query.eq(User::getStatus, normalized);
         }
         if (StringUtils.hasText(roleCode)) {
             Long roleId = requireRoleId(roleCode);
-            query.inSql(SysUser::getId,
-                    "SELECT user_id FROM sys_user_role WHERE role_id = " + roleId);
+            query.inSql(User::getId,
+                    "SELECT user_id FROM user_role WHERE role_id = " + roleId);
         }
 
-        Page<SysUser> source = userMapper.selectPage(new Page<>(page, size), query);
+        Page<User> source = userMapper.selectPage(new Page<>(page, size), query);
         Page<AdminUserResponse> result = new Page<>(source.getCurrent(), source.getSize(), source.getTotal());
         result.setRecords(source.getRecords().stream().map(this::toUserResponse).toList());
         return result;
@@ -69,8 +69,8 @@ public class AdminSecurityService {
 
     @Transactional
     public AdminUserResponse createAdmin(AdminCreateRequest request) {
-        Long count = userMapper.selectCount(Wrappers.<SysUser>lambdaQuery()
-                .eq(SysUser::getPhone, request.phone()));
+        Long count = userMapper.selectCount(Wrappers.<User>lambdaQuery()
+                .eq(User::getPhone, request.phone()));
         if (count > 0) {
             throw new BusinessException(ErrorCode.ADMIN_PHONE_EXISTS);
         }
@@ -81,7 +81,7 @@ public class AdminSecurityService {
         }
 
         LocalDateTime now = LocalDateTime.now();
-        SysUser user = new SysUser();
+        User user = new User();
         user.setPhone(request.phone());
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setNickname(request.nickname().trim());
@@ -98,7 +98,7 @@ public class AdminSecurityService {
 
     @Transactional
     public AdminUserResponse updateUser(Long userId, AdminUpdateRequest request) {
-        SysUser user = requireUser(userId);
+        User user = requireUser(userId);
         user.setNickname(request.nickname().trim());
         user.setEmail(trimToNull(request.email()));
         user.setUpdatedAt(LocalDateTime.now());
@@ -108,7 +108,7 @@ public class AdminSecurityService {
 
     @Transactional
     public void updateStatus(Long operatorId, Long userId, AdminUserStatusRequest request) {
-        SysUser user = requireUser(userId);
+        User user = requireUser(userId);
         String status = normalizeStatus(request.status());
         if (operatorId.equals(userId) && "DISABLED".equals(status)) {
             throw new BusinessException(ErrorCode.ADMIN_CANNOT_DISABLE_SELF);
@@ -126,7 +126,7 @@ public class AdminSecurityService {
 
     @Transactional
     public void replaceRoles(Long operatorId, Long userId, AdminUserRolesRequest request) {
-        SysUser user = requireUser(userId);
+        User user = requireUser(userId);
         Set<String> roles = normalizeRoles(request.roles());
         boolean removingSystemAdmin = hasRole(userId, "SYSTEM_ADMIN") && !roles.contains("SYSTEM_ADMIN");
         if (operatorId.equals(userId) && removingSystemAdmin) {
@@ -142,7 +142,7 @@ public class AdminSecurityService {
 
     @Transactional
     public void resetPassword(Long userId, AdminResetPasswordRequest request) {
-        SysUser user = requireUser(userId);
+        User user = requireUser(userId);
         validatePassword(request.newPassword());
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         user.setUpdatedAt(LocalDateTime.now());
@@ -151,8 +151,8 @@ public class AdminSecurityService {
     }
 
     public List<RoleResponse> listRoles() {
-        return roleMapper.selectList(Wrappers.<SysRole>lambdaQuery()
-                        .orderByAsc(SysRole::getId))
+        return roleMapper.selectList(Wrappers.<Role>lambdaQuery()
+                        .orderByAsc(Role::getId))
                 .stream().map(role -> {
                     RoleResponse response = new RoleResponse();
                     response.setId(role.getId());
@@ -165,11 +165,11 @@ public class AdminSecurityService {
     }
 
     public List<PermissionResponse> listPermissions(String module) {
-        var query = Wrappers.<SysPermission>lambdaQuery()
-                .eq(SysPermission::getStatus, "ENABLED")
-                .orderByAsc(SysPermission::getModule, SysPermission::getPermissionCode);
+        var query = Wrappers.<Permission>lambdaQuery()
+                .eq(Permission::getStatus, "ENABLED")
+                .orderByAsc(Permission::getModule, Permission::getPermissionCode);
         if (StringUtils.hasText(module)) {
-            query.eq(SysPermission::getModule, module.trim().toUpperCase(Locale.ROOT));
+            query.eq(Permission::getModule, module.trim().toUpperCase(Locale.ROOT));
         }
         return permissionMapper.selectList(query).stream().map(permission -> {
             PermissionResponse response = new PermissionResponse();
@@ -192,9 +192,9 @@ public class AdminSecurityService {
                 .map(value -> value.toUpperCase(Locale.ROOT))
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
         if (!codes.isEmpty()) {
-            Long existing = permissionMapper.selectCount(Wrappers.<SysPermission>lambdaQuery()
-                    .in(SysPermission::getPermissionCode, codes)
-                    .eq(SysPermission::getStatus, "ENABLED"));
+            Long existing = permissionMapper.selectCount(Wrappers.<Permission>lambdaQuery()
+                    .in(Permission::getPermissionCode, codes)
+                    .eq(Permission::getStatus, "ENABLED"));
             if (existing != codes.size()) {
                 throw new BusinessException(ErrorCode.PERMISSION_NOT_FOUND);
             }
@@ -203,7 +203,7 @@ public class AdminSecurityService {
         codes.forEach(code -> permissionMapper.insertRolePermission(roleId, code));
     }
 
-    private AdminUserResponse toUserResponse(SysUser user) {
+    private AdminUserResponse toUserResponse(User user) {
         AdminUserResponse response = new AdminUserResponse();
         response.setId(user.getId());
         response.setPhone(user.getPhone());
@@ -217,8 +217,8 @@ public class AdminSecurityService {
         return response;
     }
 
-    private SysUser requireUser(Long userId) {
-        SysUser user = userMapper.selectById(userId);
+    private User requireUser(Long userId) {
+        User user = userMapper.selectById(userId);
         if (user == null) throw new BusinessException(ErrorCode.ADMIN_USER_NOT_FOUND);
         return user;
     }

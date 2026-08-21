@@ -6,8 +6,8 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 @Data
-@TableName("sys_role")
-public class SysRole {
+@TableName("role")
+public class Role {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String roleCode;

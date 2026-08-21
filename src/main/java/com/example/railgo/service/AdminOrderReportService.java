@@ -30,7 +30,7 @@ public class AdminOrderReportService {
 
     private final AdminOrderReportMapper reportMapper;
     private final TicketOrderMapper ticketOrderMapper;
-    private final SysUserMapper sysUserMapper;
+    private final UserMapper UserMapper;
     private final PaymentRecordMapper paymentRecordMapper;
     private final TicketReturnMapper ticketReturnMapper;
     private final RefundRecordMapper refundRecordMapper;
@@ -52,7 +52,7 @@ public class AdminOrderReportService {
         if (order == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "订单不存在");
         }
-        SysUser user = sysUserMapper.selectById(order.getUserId());
+        User user = UserMapper.selectById(order.getUserId());
         List<OrderItemDetailResponse> items = ticketOrderMapper.selectOrderItemDetails(orderId);
 
         List<PaymentRecord> payments = paymentRecordMapper.selectList(
