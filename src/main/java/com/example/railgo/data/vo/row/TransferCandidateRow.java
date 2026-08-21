@@ -16,6 +16,7 @@ public class TransferCandidateRow {
     private String firstTrainType;
     private String firstOriginStation;
     private String firstTerminalStation;
+    private Long firstFromStationId;
     private String firstFromStation;
     private String firstToStation;
     private Integer firstFromSeq;
@@ -30,6 +31,7 @@ public class TransferCandidateRow {
     private String secondOriginStation;
     private String secondTerminalStation;
     private String secondFromStation;
+    private Long secondToStationId;
     private String secondToStation;
     private Integer secondFromSeq;
     private Integer secondToSeq;

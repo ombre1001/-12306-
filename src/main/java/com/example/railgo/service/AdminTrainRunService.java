@@ -17,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.example.railgo.data.dto.AdminAllRunOnSaleResult;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -317,6 +318,70 @@ public class AdminTrainRunService {
                 train == null ? null : train.getTrainNo(),
                 run.getRunDate(),
                 reason
+        );
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public AdminAllRunOnSaleResult setAllEligibleRunsOnSale() {
+        long totalRunCount = trainRunMapper.selectCount(
+                Wrappers.<TrainRun>lambdaQuery()
+        );
+
+        long alreadyOnSaleCount = trainRunMapper.selectCount(
+                Wrappers.<TrainRun>lambdaQuery()
+                        .eq(
+                                TrainRun::getSaleStatus,
+                                "ON_SALE"
+                        )
+        );
+
+        long inventoryNotInitializedCount =
+                trainRunMapper.selectCount(
+                        Wrappers.<TrainRun>lambdaQuery()
+                                .and(wrapper ->
+                                        wrapper.eq(
+                                                        TrainRun::getInventoryInitialized,
+                                                        false
+                                                )
+                                                .or()
+                                                .isNull(
+                                                        TrainRun::getInventoryInitialized
+                                                )
+                                )
+                                .ne(
+                                        TrainRun::getSaleStatus,
+                                        "CANCELLED"
+                                )
+                );
+
+        long cancelledCount = trainRunMapper.selectCount(
+                Wrappers.<TrainRun>lambdaQuery()
+                        .eq(
+                                TrainRun::getSaleStatus,
+                                "CANCELLED"
+                        )
+        );
+
+        int updatedCount =
+                trainRunMapper.updateAllEligibleRunsToOnSale();
+
+        log.info(
+                "全部运行计划一键开售完成：totalRunCount={}, "
+                        + "updatedCount={}, alreadyOnSaleCount={}, "
+                        + "inventoryNotInitializedCount={}, cancelledCount={}",
+                totalRunCount,
+                updatedCount,
+                alreadyOnSaleCount,
+                inventoryNotInitializedCount,
+                cancelledCount
+        );
+
+        return new AdminAllRunOnSaleResult(
+                totalRunCount,
+                updatedCount,
+                alreadyOnSaleCount,
+                inventoryNotInitializedCount,
+                cancelledCount
         );
     }
 

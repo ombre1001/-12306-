@@ -15,6 +15,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import com.example.railgo.data.vo.admin.AdminTrainRunResponse;
+import com.example.railgo.data.dto.AdminAllRunOnSaleResult;
 
 import java.time.LocalDate;
 import java.util.Map;
@@ -99,5 +100,17 @@ public class AdminTrainRunController {
     ) {
         adminTrainRunService.delete(runId);
         return Result.ok();
+    }
+
+    @PatchMapping("/sale-status/on-sale-all")
+    public ResponseEntity<Result<AdminAllRunOnSaleResult>>
+    setAllEligibleRunsOnSale() {
+        AdminAllRunOnSaleResult result =
+                adminTrainRunService.setAllEligibleRunsOnSale();
+
+        return Result.success(
+                result,
+                "全部符合条件的运行计划已开售"
+        );
     }
 }

@@ -12,6 +12,7 @@ import com.example.railgo.data.vo.row.FareAvailabilityRow;
 import com.example.railgo.data.vo.row.TransferCandidateRow;
 import com.example.railgo.exception.BusinessException;
 import com.example.railgo.exception.ErrorCode;
+import com.example.railgo.mapper.StationMapper;
 import com.example.railgo.mapper.TicketQueryMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -41,7 +42,11 @@ public class TicketQueryService {
 
     private static final int TRANSFER_RESULT_LIMIT = 20;
 
+    private static final int MAX_MATCHED_STATIONS = 100;
+
     private final TicketQueryMapper ticketQueryMapper;
+
+    private final StationMapper stationMapper;
 
     public List<DirectTicketResponse> queryDirectTickets(
             TicketQueryRequest request
@@ -55,34 +60,51 @@ public class TicketQueryService {
             return Collections.emptyList();
         }
 
-        List<Long> runIds = runs.stream()
-                .map(DirectTicketResponse::getRunId)
-                .toList();
+        Map<RouteKey, List<FareAvailabilityResponse>>
+                faresByRoute = new HashMap<>();
 
-        List<FareAvailabilityRow> rows =
-                ticketQueryMapper.selectFareAvailability(
-                        runIds,
-                        request.getFromStationId(),
-                        request.getToStationId()
-                );
-
-        Map<Long, List<FareAvailabilityResponse>> faresByRun =
-                rows.stream().collect(
+        Map<StationPair, List<DirectTicketResponse>>
+                runsByStationPair =
+                runs.stream().collect(
                         Collectors.groupingBy(
-                                FareAvailabilityRow::getRunId,
-                                Collectors.mapping(
-                                        this::toFareResponse,
-                                        Collectors.toList()
+                                run -> new StationPair(
+                                        run.getFromStationId(),
+                                        run.getToStationId()
                                 )
                         )
                 );
 
-        runs.forEach(run -> run.setFares(
-                faresByRun.getOrDefault(
-                        run.getRunId(),
-                        Collections.emptyList()
+        runsByStationPair.forEach(
+                (stationPair, routeRuns) ->
+                        loadRouteFares(
+                                faresByRoute,
+                                routeRuns.stream()
+                                        .map(DirectTicketResponse::getRunId)
+                                        .distinct()
+                                        .toList(),
+                                stationPair.fromStationId(),
+                                stationPair.toStationId()
+                        )
+        );
+
+        runs.forEach(run ->
+                run.setFares(
+                        faresByRoute.getOrDefault(
+                                new RouteKey(
+                                        run.getRunId(),
+                                        run.getFromStationId(),
+                                        run.getToStationId()
+                                ),
+                                Collections.emptyList()
+                        )
                 )
-        ));
+        );
+
+        runs = runs.stream()
+                .filter(run -> !run.getFares().isEmpty())
+                .collect(
+                        Collectors.toCollection(ArrayList::new)
+                );
 
         if ("PRICE_ASC".equals(request.getSort())) {
             runs.sort(
@@ -124,14 +146,14 @@ public class TicketQueryService {
         for (TransferCandidateRow candidate : candidates) {
             RouteKey firstRouteKey = new RouteKey(
                     candidate.getFirstRunId(),
-                    request.getFromStationId(),
+                    candidate.getFirstFromStationId(),
                     candidate.getTransferStationId()
             );
 
             RouteKey secondRouteKey = new RouteKey(
                     candidate.getSecondRunId(),
                     candidate.getTransferStationId(),
-                    request.getToStationId()
+                    candidate.getSecondToStationId()
             );
 
             List<FareAvailabilityResponse> firstFares =
@@ -281,8 +303,41 @@ public class TicketQueryService {
     private void validateAndNormalize(
             TicketQueryRequest request
     ) {
-        if (request.getFromStationId()
+        request.setFromStationIds(
+                resolveStationIds(
+                        request.getFromStationId(),
+                        request.getFromStation(),
+                        "出发地"
+                )
+        );
+
+        request.setToStationIds(
+                resolveStationIds(
+                        request.getToStationId(),
+                        request.getToStation(),
+                        "到达地"
+                )
+        );
+
+        if (request.getTravelDate() == null) {
+            throw new BusinessException(
+                    ErrorCode.PARAM_ERROR,
+                    "乘车日期不能为空"
+            );
+        }
+
+        if (request.getFromStationId() != null
+                && request.getFromStationId()
                 .equals(request.getToStationId())) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_ROUTE
+            );
+        }
+
+        if (isSameInputLocation(
+                request.getFromStation(),
+                request.getToStation()
+        )) {
             throw new BusinessException(
                     ErrorCode.INVALID_ROUTE
             );
@@ -337,8 +392,41 @@ public class TicketQueryService {
     private void validateAndNormalize(
             TransferTicketQueryRequest request
     ) {
-        if (request.getFromStationId()
+        request.setFromStationIds(
+                resolveStationIds(
+                        request.getFromStationId(),
+                        request.getFromStation(),
+                        "出发地"
+                )
+        );
+
+        request.setToStationIds(
+                resolveStationIds(
+                        request.getToStationId(),
+                        request.getToStation(),
+                        "到达地"
+                )
+        );
+
+        if (request.getTravelDate() == null) {
+            throw new BusinessException(
+                    ErrorCode.PARAM_ERROR,
+                    "乘车日期不能为空"
+            );
+        }
+
+        if (request.getFromStationId() != null
+                && request.getFromStationId()
                 .equals(request.getToStationId())) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_ROUTE
+            );
+        }
+
+        if (isSameInputLocation(
+                request.getFromStation(),
+                request.getToStation()
+        )) {
             throw new BusinessException(
                     ErrorCode.INVALID_ROUTE
             );
@@ -351,10 +439,25 @@ public class TicketQueryService {
             );
         }
 
+        if (request.getMinTransferMinutes() == null
+                || request.getMaxTransferMinutes() == null) {
+            throw new BusinessException(
+                    ErrorCode.PARAM_ERROR,
+                    "换乘时间不能为空"
+            );
+        }
+
         if (request.getMinTransferMinutes()
                 >= request.getMaxTransferMinutes()) {
             throw new BusinessException(
                     ErrorCode.INVALID_TRANSFER_TIME
+            );
+        }
+
+        if (request.getMaxTransferMinutes() > 90) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_TRANSFER_TIME,
+                    "最长换乘时间不能超过90分钟"
             );
         }
 
@@ -368,6 +471,73 @@ public class TicketQueryService {
                         ? sort
                         : "TOTAL_DURATION_ASC"
         );
+    }
+
+    private List<Long> resolveStationIds(
+            Long stationId,
+            String keyword,
+            String fieldName
+    ) {
+        if (stationId != null) {
+            return List.of(stationId);
+        }
+
+        if (keyword == null || keyword.isBlank()) {
+            throw new BusinessException(
+                    ErrorCode.PARAM_ERROR,
+                    fieldName + "不能为空"
+            );
+        }
+
+        String trimmedKeyword = keyword.trim();
+        String normalizedKeyword = trimmedKeyword
+                .replaceAll("\\s+", "")
+                .toLowerCase(Locale.ROOT);
+
+        List<Long> stationIds =
+                stationMapper.selectMatchedStationIds(
+                        trimmedKeyword,
+                        normalizedKeyword,
+                        trimmedKeyword.toUpperCase(Locale.ROOT),
+                        MAX_MATCHED_STATIONS
+                );
+
+        if (stationIds.isEmpty()) {
+            throw new BusinessException(
+                    ErrorCode.NOT_FOUND,
+                    "没有找到与“"
+                            + trimmedKeyword
+                            + "”匹配的客运车站"
+            );
+        }
+
+        return stationIds;
+    }
+
+    private boolean isSameInputLocation(
+            String fromStation,
+            String toStation
+    ) {
+        if (fromStation == null
+                || fromStation.isBlank()
+                || toStation == null
+                || toStation.isBlank()) {
+            return false;
+        }
+
+        return normalizeLocation(fromStation)
+                .equals(normalizeLocation(toStation));
+    }
+
+    private String normalizeLocation(String value) {
+        return value
+                .trim()
+                .replaceAll("\\s+", "")
+                .replaceAll(
+                        "(特别行政区|自治州|地区|市|省|盟)$",
+                        ""
+                )
+                .toLowerCase(Locale.ROOT);
     }
 
     private void requireRun(Long runId) {
@@ -387,51 +557,62 @@ public class TicketQueryService {
         Map<RouteKey, List<FareAvailabilityResponse>> result =
                 new HashMap<>();
 
-        Map<Long, List<TransferCandidateRow>>
-                byTransferStation =
+        Map<StationPair, List<Long>> firstRoutes =
                 candidates.stream()
                         .collect(
                                 Collectors.groupingBy(
-                                        TransferCandidateRow
-                                                ::getTransferStationId
+                                        candidate ->
+                                                new StationPair(
+                                                        candidate.getFirstFromStationId(),
+                                                        candidate.getTransferStationId()
+                                                ),
+                                        Collectors.mapping(
+                                                TransferCandidateRow::getFirstRunId,
+                                                Collectors.collectingAndThen(
+                                                        Collectors.toSet(),
+                                                        ArrayList::new
+                                                )
+                                        )
                                 )
                         );
 
-        byTransferStation.forEach(
-                (transferStationId, stationCandidates) -> {
+        firstRoutes.forEach(
+                (stationPair, runIds) ->
+                        loadRouteFares(
+                                result,
+                                runIds,
+                                stationPair.fromStationId(),
+                                stationPair.toStationId()
+                        )
+        );
 
-                    List<Long> firstRunIds =
-                            stationCandidates.stream()
-                                    .map(
-                                            TransferCandidateRow
-                                                    ::getFirstRunId
-                                    )
-                                    .distinct()
-                                    .toList();
+        Map<StationPair, List<Long>> secondRoutes =
+                candidates.stream()
+                        .collect(
+                                Collectors.groupingBy(
+                                        candidate ->
+                                                new StationPair(
+                                                        candidate.getTransferStationId(),
+                                                        candidate.getSecondToStationId()
+                                                ),
+                                        Collectors.mapping(
+                                                TransferCandidateRow::getSecondRunId,
+                                                Collectors.collectingAndThen(
+                                                        Collectors.toSet(),
+                                                        ArrayList::new
+                                                )
+                                        )
+                                )
+                        );
 
-                    loadRouteFares(
-                            result,
-                            firstRunIds,
-                            request.getFromStationId(),
-                            transferStationId
-                    );
-
-                    List<Long> secondRunIds =
-                            stationCandidates.stream()
-                                    .map(
-                                            TransferCandidateRow
-                                                    ::getSecondRunId
-                                    )
-                                    .distinct()
-                                    .toList();
-
-                    loadRouteFares(
-                            result,
-                            secondRunIds,
-                            transferStationId,
-                            request.getToStationId()
-                    );
-                }
+        secondRoutes.forEach(
+                (stationPair, runIds) ->
+                        loadRouteFares(
+                                result,
+                                runIds,
+                                stationPair.fromStationId(),
+                                stationPair.toStationId()
+                        )
         );
 
         return result;
@@ -495,8 +676,14 @@ public class TicketQueryService {
         response.setTerminalStation(
                 row.getFirstTerminalStation()
         );
+        response.setFromStationId(
+                row.getFirstFromStationId()
+        );
         response.setFromStation(
                 row.getFirstFromStation()
+        );
+        response.setToStationId(
+                row.getTransferStationId()
         );
         response.setToStation(
                 row.getFirstToStation()
@@ -533,8 +720,14 @@ public class TicketQueryService {
         response.setTerminalStation(
                 row.getSecondTerminalStation()
         );
+        response.setFromStationId(
+                row.getTransferStationId()
+        );
         response.setFromStation(
                 row.getSecondFromStation()
+        );
+        response.setToStationId(
+                row.getSecondToStationId()
         );
         response.setToStation(
                 row.getSecondToStation()
@@ -647,6 +840,12 @@ public class TicketQueryService {
 
     private record RouteKey(
             Long runId,
+            Long fromStationId,
+            Long toStationId
+    ) {
+    }
+
+    private record StationPair(
             Long fromStationId,
             Long toStationId
     ) {

@@ -9,6 +9,8 @@
         terminal_station.name AS terminal_station,
         from_station.name AS from_station,
         to_station.name AS to_station,
+        fs.station_id AS from_station_id,
+        ts.station_id AS to_station_id,
         fs.stop_seq AS from_seq, ts.stop_seq AS to_seq,
         TIMESTAMP(DATE_ADD(tr.run_date, INTERVAL fs.departure_day_offset DAY), fs.departure_time)
         AS departure_date_time,
@@ -20,9 +22,28 @@
         AS duration_minutes
         FROM train_run tr
         JOIN train t ON t.id = tr.train_id
-        JOIN train_stop fs ON fs.train_id = t.id AND fs.station_id = #{query.fromStationId}
-        JOIN train_stop ts ON ts.train_id = t.id AND ts.station_id = #{query.toStationId}
-        AND ts.stop_seq > fs.stop_seq
+        JOIN train_stop fs
+        ON fs.train_id = t.id
+        AND fs.station_id IN
+        <foreach collection="query.fromStationIds"
+                 item="stationId"
+                 open="("
+                 separator=","
+                 close=")">
+            #{stationId}
+        </foreach>
+
+        JOIN train_stop ts
+        ON ts.train_id = t.id
+        AND ts.station_id IN
+        <foreach collection="query.toStationIds"
+                 item="stationId"
+                 open="("
+                 separator=","
+                 close=")">
+            #{stationId}
+        </foreach>
+        AND ts.stop_seq &gt; fs.stop_seq
         JOIN station from_station ON from_station.id = fs.station_id
         JOIN station to_station ON to_station.id = ts.station_id
         JOIN train_stop origin_stop ON origin_stop.train_id = t.id AND origin_stop.stop_seq = 1
@@ -175,6 +196,10 @@
         transfer_station.id AS transfer_station_id,
         transfer_station.station_code AS transfer_station_code,
         transfer_station.name AS transfer_station,
+        first_from_stop.station_id
+        AS first_from_station_id,
+        second_to_stop.station_id
+        AS second_to_station_id,
 
         first_run.id AS first_run_id,
         first_train.train_no AS first_train_no,
@@ -308,7 +333,14 @@
 
         JOIN train_stop first_from_stop
         ON first_from_stop.train_id = first_train.id
-        AND first_from_stop.station_id = #{query.fromStationId}
+        AND first_from_stop.station_id IN
+        <foreach collection="query.fromStationIds"
+                 item="stationId"
+                 open="("
+                 separator=","
+                 close=")">
+            #{stationId}
+        </foreach>
 
         JOIN station first_from_station
         ON first_from_station.id = first_from_stop.station_id
@@ -344,7 +376,14 @@
 
         JOIN train_stop second_to_stop
         ON second_to_stop.train_id = second_train.id
-        AND second_to_stop.station_id = #{query.toStationId}
+        AND second_to_stop.station_id IN
+        <foreach collection="query.toStationIds"
+                 item="stationId"
+                 open="("
+                 separator=","
+                 close=")">
+            #{stationId}
+        </foreach>
         AND second_to_stop.stop_seq &gt;
         second_transfer_stop.stop_seq
         AND second_to_stop.arrival_time IS NOT NULL
@@ -373,8 +412,23 @@
         AND first_run.inventory_initialized = 1
         AND first_run.run_status != 'CANCELLED'
         AND first_run.id != second_run.id
-        AND transfer_station.id != #{query.fromStationId}
-        AND transfer_station.id != #{query.toStationId}
+        AND transfer_station.id NOT IN
+        <foreach collection="query.fromStationIds"
+                 item="stationId"
+                 open="("
+                 separator=","
+                 close=")">
+            #{stationId}
+        </foreach>
+
+        AND transfer_station.id NOT IN
+        <foreach collection="query.toStationIds"
+                 item="stationId"
+                 open="("
+                 separator=","
+                 close=")">
+            #{stationId}
+        </foreach>
 
         /*
         * 第二程出发时间与第一程到达时间之间，

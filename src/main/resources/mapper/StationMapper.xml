@@ -106,4 +106,56 @@
 
     </select>
 
+    <select id="selectMatchedStationIds"
+            resultType="java.lang.Long">
+        SELECT station.id
+        FROM station
+        WHERE station.status = 'ACTIVE'
+        AND station.passenger_service = 1
+        AND (
+        UPPER(station.station_code) = #{keywordUpper}
+
+        OR station.name LIKE CONCAT('%', #{keyword}, '%')
+        OR station.normalized_name LIKE CONCAT('%', #{normalizedKeyword}, '%')
+
+        OR LOWER(station.pinyin)
+        LIKE CONCAT(#{normalizedKeyword}, '%')
+        OR LOWER(station.pinyin_initial)
+        LIKE CONCAT(#{normalizedKeyword}, '%')
+
+        OR station.province
+        LIKE CONCAT('%', #{keyword}, '%')
+        OR station.city
+        LIKE CONCAT('%', #{keyword}, '%')
+        OR station.district
+        LIKE CONCAT('%', #{keyword}, '%')
+        OR station.address
+        LIKE CONCAT('%', #{keyword}, '%')
+        )
+        ORDER BY
+        CASE
+        WHEN UPPER(station.station_code) = #{keywordUpper}
+        THEN 0
+        WHEN station.name = #{keyword}
+        THEN 1
+        WHEN station.normalized_name = #{normalizedKeyword}
+        THEN 2
+        WHEN station.city = #{keyword}
+        OR station.city = CONCAT(#{keyword}, '市')
+        THEN 3
+        WHEN station.province = #{keyword}
+        OR station.province = CONCAT(#{keyword}, '省')
+        THEN 4
+        WHEN station.name LIKE CONCAT(#{keyword}, '%')
+        THEN 5
+        WHEN station.city LIKE CONCAT('%', #{keyword}, '%')
+        THEN 6
+        ELSE 7
+        END,
+        station.hot_score DESC,
+        station.name ASC,
+        station.id ASC
+        LIMIT #{limit}
+    </select>
+
 </mapper>

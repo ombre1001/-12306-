@@ -11,11 +11,14 @@ import com.example.railgo.mapper.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.jdbc.core.JdbcTemplate;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.*;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AdminTrainService {
@@ -31,6 +34,68 @@ public class AdminTrainService {
     private final TrainRunMapper trainRunMapper;
     private final StationMapper stationMapper;
     private final SeatTypeMapper seatTypeMapper;
+    private final JdbcTemplate jdbcTemplate;
+
+    private int batchInsertSeats(
+            Long coachId,
+            Integer startRow,
+            Integer endRow,
+            Collection<String> seatLetters
+    ) {
+        List<Object[]> batchArgs = new ArrayList<>();
+
+        for (int row = startRow; row <= endRow; row++) {
+            for (String rawLetter : seatLetters) {
+                String letter = rawLetter
+                        .trim()
+                        .toUpperCase(Locale.ROOT);
+
+                batchArgs.add(
+                        new Object[]{
+                                coachId,
+                                String.format("%02d%s", row, letter),
+                                row,
+                                letter,
+                                true
+                        }
+                );
+            }
+        }
+
+        if (batchArgs.isEmpty()) {
+            return 0;
+        }
+
+        int[] affectedRows = jdbcTemplate.batchUpdate(
+                """
+                INSERT INTO train_seat
+                    (
+                        coach_id,
+                        seat_no,
+                        row_no,
+                        seat_letter,
+                        enabled
+                    )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                batchArgs
+        );
+
+        int insertedCount = 0;
+
+        for (int affectedRow : affectedRows) {
+            if (affectedRow > 0) {
+                insertedCount += affectedRow;
+            } else if (affectedRow == -2) {
+                /*
+                 * JDBC SUCCESS_NO_INFO，表示执行成功但驱动没有返回具体行数。
+                 */
+                insertedCount++;
+            }
+        }
+
+        return insertedCount;
+    }
 
     public IPage<Train> page(
             long page,
@@ -716,11 +781,29 @@ public class AdminTrainService {
         boolean overwrite = Boolean.TRUE.equals(request.overwrite());
 
         /*
-         * 先校验所有模板，并提前加载席别。
+         * 当前爬虫同步逻辑会写入 source_train_code。
+         * 因此这里只查询爬虫同步车次，不处理管理员手动创建的车次。
          */
+        List<Train> trains = trainMapper.selectList(
+                Wrappers.<Train>lambdaQuery()
+                        .isNotNull(Train::getSourceTrainCode)
+                        .ne(Train::getSourceTrainCode, "")
+                        .orderByAsc(Train::getId)
+
+        );
+
+        if (trains.isEmpty()) {
+            throw new IllegalStateException(
+                    "没有查询到爬虫同步车次，请检查train.source_train_code是否有值"
+            );
+        }
+
         SeatType firstClassSeatType = findSeatTypeByCode("FIRST");
         SeatType secondClassSeatType = findSeatTypeByCode("SECOND");
 
+        /*
+         * 提前验证所有模板，防止处理中途因为模板错误而整体回滚。
+         */
         Set<String> coachNoSet = new HashSet<>();
 
         for (AdminAllTrainSeatInitRequest.CoachTemplate template
@@ -753,50 +836,68 @@ public class AdminTrainService {
             );
         }
 
-        List<Train> trains = trainMapper.selectList(
-                Wrappers.<Train>lambdaQuery()
-                        .orderByAsc(Train::getId)
-        );
-
         int initializedTrainCount = 0;
-        int skippedTrainCount = 0;
+        int existingStructureSkippedCount = 0;
+        int inventoryLockedSkippedCount = 0;
         int generatedCoachCount = 0;
         int generatedSeatCount = 0;
 
+        List<String> inventoryLockedTrainNos = new ArrayList<>();
+
         for (Train train : trains) {
             Long trainId = train.getId();
+            log.info(
+                    "开始初始化车厢座位：trainId={}, trainNo={}, 当前进度={}/{}",
+                    trainId,
+                    train.getTrainNo(),
+                    initializedTrainCount + 1,
+                    trains.size()
+            );
+
+            /*
+             * 已开售或已初始化库存的车次不能修改车厢、座位结构。
+             * 以前这里直接抛异常，导致整个事务回滚。
+             * 现在改为记录并跳过。
+             */
+            if (!isStructureEditable(trainId)) {
+                inventoryLockedSkippedCount++;
+                inventoryLockedTrainNos.add(train.getTrainNo());
+                continue;
+            }
 
             List<TrainCoach> oldCoaches =
                     trainCoachMapper.selectList(
                             Wrappers.<TrainCoach>lambdaQuery()
                                     .eq(TrainCoach::getTrainId, trainId)
+                                    .orderByAsc(TrainCoach::getId)
                     );
 
             /*
-             * overwrite=false 时，跳过已有车厢的车次。
+             * overwrite=false 时，已有车厢结构直接跳过。
              */
             if (!oldCoaches.isEmpty() && !overwrite) {
-                skippedTrainCount++;
+                existingStructureSkippedCount++;
                 continue;
             }
 
             /*
-             * 检查车次是否已经开售或已经初始化库存。
-             */
-            ensureStructureEditable(trainId);
-
-            /*
-             * overwrite=true 时删除旧座位和旧车厢。
+             * overwrite=true 时，先删除旧座位，再删除旧车厢。
              */
             if (!oldCoaches.isEmpty()) {
-                List<Long> coachIds = oldCoaches.stream()
+                List<Long> oldCoachIds = oldCoaches.stream()
                         .map(TrainCoach::getId)
+                        .filter(Objects::nonNull)
                         .toList();
 
-                trainSeatMapper.delete(
-                        Wrappers.<TrainSeat>lambdaQuery()
-                                .in(TrainSeat::getCoachId, coachIds)
-                );
+                if (!oldCoachIds.isEmpty()) {
+                    trainSeatMapper.delete(
+                            Wrappers.<TrainSeat>lambdaQuery()
+                                    .in(
+                                            TrainSeat::getCoachId,
+                                            oldCoachIds
+                                    )
+                    );
+                }
 
                 trainCoachMapper.delete(
                         Wrappers.<TrainCoach>lambdaQuery()
@@ -820,7 +921,9 @@ public class AdminTrainService {
                 );
 
                 int capacity =
-                        (template.endRow() - template.startRow() + 1)
+                        (template.endRow()
+                                - template.startRow()
+                                + 1)
                                 * letters.size();
 
                 TrainCoach coach = new TrainCoach();
@@ -829,53 +932,92 @@ public class AdminTrainService {
                 coach.setSeatTypeId(seatType.getId());
                 coach.setCapacity(capacity);
 
-                if (trainCoachMapper.insert(coach) != 1) {
+                int coachAffectedRows = trainCoachMapper.insert(coach);
+
+                if (coachAffectedRows != 1 || coach.getId() == null) {
                     throw new IllegalStateException(
-                            "车厢保存失败，trainId=" + trainId
-                                    + "，coachNo=" + coachNo
+                            "车厢保存失败，trainId="
+                                    + trainId
+                                    + "，trainNo="
+                                    + train.getTrainNo()
+                                    + "，coachNo="
+                                    + coachNo
                     );
                 }
 
                 generatedCoachCount++;
 
-                for (int row = template.startRow();
-                     row <= template.endRow();
-                     row++) {
+                int expectedSeatCount =
+                        (template.endRow()
+                                - template.startRow()
+                                + 1)
+                                * letters.size();
 
-                    for (String letter : letters) {
-                        TrainSeat seat = new TrainSeat();
+                int actualSeatCount = batchInsertSeats(
+                        coach.getId(),
+                        template.startRow(),
+                        template.endRow(),
+                        letters
+                );
 
-                        seat.setCoachId(coach.getId());
-                        seat.setRowNo(row);
-                        seat.setSeatLetter(letter);
-                        seat.setSeatNo(
-                                String.format("%02d%s", row, letter)
-                        );
-                        seat.setEnabled(true);
-
-                        if (trainSeatMapper.insert(seat) != 1) {
-                            throw new IllegalStateException(
-                                    "座位生成失败，trainId=" + trainId
-                                            + "，coachNo=" + coachNo
-                                            + "，seatNo=" + seat.getSeatNo()
-                            );
-                        }
-
-                        generatedSeatCount++;
-                    }
+                if (actualSeatCount != expectedSeatCount) {
+                    throw new IllegalStateException(
+                            "座位批量保存数量异常，trainId="
+                                    + trainId
+                                    + "，trainNo="
+                                    + train.getTrainNo()
+                                    + "，coachNo="
+                                    + coachNo
+                                    + "，预计生成="
+                                    + expectedSeatCount
+                                    + "，实际生成="
+                                    + actualSeatCount
+                    );
                 }
+
+                generatedSeatCount += actualSeatCount;
             }
 
             initializedTrainCount++;
+            log.info(
+                    "车厢座位初始化完成：trainId={}, trainNo={}, 已生成车厢总数={}, 已生成座位总数={}",
+                    trainId,
+                    train.getTrainNo(),
+                    generatedCoachCount,
+                    generatedSeatCount
+            );
         }
 
         return new AdminAllTrainSeatInitResult(
                 trains.size(),
                 initializedTrainCount,
-                skippedTrainCount,
+                existingStructureSkippedCount,
+                inventoryLockedSkippedCount,
                 generatedCoachCount,
-                generatedSeatCount
+                generatedSeatCount,
+                inventoryLockedTrainNos
         );
+    }
+
+
+    private boolean isStructureEditable(Long trainId) {
+        Long lockedRunCount = trainRunMapper.selectCount(
+                Wrappers.<TrainRun>lambdaQuery()
+                        .eq(TrainRun::getTrainId, trainId)
+                        .and(wrapper ->
+                                wrapper.eq(
+                                                TrainRun::getInventoryInitialized,
+                                                true
+                                        )
+                                        .or()
+                                        .eq(
+                                                TrainRun::getSaleStatus,
+                                                "ON_SALE"
+                                        )
+                        )
+        );
+
+        return lockedRunCount == null || lockedRunCount == 0;
     }
 
     private void ensureStructureEditable(Long trainId) {

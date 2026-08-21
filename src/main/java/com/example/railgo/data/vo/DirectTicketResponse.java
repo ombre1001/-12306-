@@ -19,7 +19,11 @@ public class DirectTicketResponse {
 
     private String terminalStation;
 
+    private Long fromStationId;
+
     private String fromStation;
+
+    private Long toStationId;
 
     private String toStation;
 
@@ -33,5 +37,6 @@ public class DirectTicketResponse {
 
     private Integer durationMinutes;
 
-    private List<FareAvailabilityResponse> fares = new ArrayList<>();
+    private List<FareAvailabilityResponse> fares =
+            new ArrayList<>();
 }

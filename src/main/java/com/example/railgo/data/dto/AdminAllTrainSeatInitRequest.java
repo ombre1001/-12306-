@@ -18,9 +18,8 @@ public record AdminAllTrainSeatInitRequest(
          */
         Boolean overwrite,
 
-        @Valid
         @NotEmpty(message = "车厢模板不能为空")
-        List<CoachTemplate> templates
+        List<@Valid CoachTemplate> templates
 ) {
 
     public record CoachTemplate(

@@ -1,5 +1,6 @@
 package com.example.railgo.data.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -11,13 +12,21 @@ import java.time.LocalDate;
 @Data
 public class TransferTicketQueryRequest {
 
-    @NotNull(message = "出发站不能为空")
     private Long fromStationId;
 
-    @NotNull(message = "到达站不能为空")
     private Long toStationId;
 
-    @NotNull(message = "乘车日期不能为空")
+    private String fromStation;
+
+    private String toStation;
+
+    /** Service 解析出的所在地全部车站ID，仅供 Mapper 使用。 */
+    @Schema(hidden = true)
+    private java.util.List<Long> fromStationIds;
+
+    @Schema(hidden = true)
+    private java.util.List<Long> toStationIds;
+
     @DateTimeFormat(pattern = "yyyy-MM-dd")
     private LocalDate travelDate;
 
@@ -28,8 +37,8 @@ public class TransferTicketQueryRequest {
 
     @NotNull(message = "最长换乘时间不能为空")
     @Min(value = 1, message = "最长换乘时间必须大于0分钟")
-    @Max(value = 1440, message = "最长换乘时间不能超过1440分钟")
-    private Integer maxTransferMinutes = 360;
+    @Max(value = 90, message = "最长换乘时间不能超过90分钟")
+    private Integer maxTransferMinutes = 90;
 
     /**
      * TOTAL_DURATION_ASC：总历时升序

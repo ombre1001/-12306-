@@ -8,6 +8,7 @@ import com.example.railgo.data.vo.admin.AdminTrainRunResponse;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.time.LocalDate;
 
@@ -71,4 +72,17 @@ public interface TrainRunMapper extends BaseMapper<TrainRun> {
             @Param("endDate") LocalDate endDate,
             @Param("saleStatus") String saleStatus
     );
+
+    @Update("""
+        UPDATE train_run
+        SET sale_status = 'ON_SALE',
+            updated_at = NOW()
+        WHERE inventory_initialized = 1
+          AND sale_status IN (
+              'DRAFT',
+              'NOT_ON_SALE',
+              'OFF_SALE'
+          )
+        """)
+    int updateAllEligibleRunsToOnSale();
 }
