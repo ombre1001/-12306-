@@ -1,10 +1,7 @@
 package com.example.railgo.controller;
 
 
-import com.example.railgo.data.dto.LoginRequest;
-import com.example.railgo.data.dto.LogoutRequest;
-import com.example.railgo.data.dto.RefreshTokenRequest;
-import com.example.railgo.data.dto.RegisterRequest;
+import com.example.railgo.data.dto.*;
 import com.example.railgo.service.AuthService;
 import com.example.railgo.data.vo.AuthResponse;
 import com.example.railgo.data.vo.Result;
@@ -13,6 +10,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,9 +28,19 @@ public class AuthController {
 
     private final AuthService authService;
 
+    @Operation(summary = "发送注册邮箱验证码")
+    @PostMapping("/email/code")
+    public ResponseEntity<Result<Void>> sendEmailCode(
+            @Valid @RequestBody SendEmailCodeRequest request,
+            HttpServletRequest httpRequest) {
+
+        authService.sendEmailRegistrationCode(request, httpRequest.getRemoteAddr());
+        return Result.ok();
+    }
+
     @Operation(
             summary = "用户注册",
-            description = "使用手机号、密码和验证码注册，注册成功后返回访问令牌和刷新令牌"
+            description = "使用邮箱、密码和邮箱验证码注册，注册成功后返回访问令牌和刷新令牌"
     )
     @PostMapping("/register")
     public ResponseEntity<Result<AuthResponse>>
@@ -55,7 +63,7 @@ public class AuthController {
 
     @Operation(
             summary = "用户登录",
-            description = "使用手机号和密码登录"
+            description = "使用邮箱或手机号和密码登录"
     )
     @PostMapping("/login")
     public ResponseEntity<Result<AuthResponse>>

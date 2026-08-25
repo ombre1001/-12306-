@@ -30,6 +30,7 @@
         <java.version>21</java.version>
         <mybatis-plus.version>3.5.16</mybatis-plus.version>
         <jjwt.version>0.12.6</jjwt.version>
+        <aliyun-sms.version>4.6.0</aliyun-sms.version>
     </properties>
 
     <dependencies>
@@ -49,6 +50,25 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- Redis：验证码过期、单次消费和限流 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- 邮箱验证码：兼容 QQ、163、企业邮箱等标准 SMTP 服务 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
+        <!-- 阿里云短信 V2.0 SDK -->
+        <dependency>
+            <groupId>com.aliyun</groupId>
+            <artifactId>dysmsapi20170525</artifactId>
+            <version>${aliyun-sms.version}</version>
         </dependency>
 
         <!-- MyBatis-Plus -->

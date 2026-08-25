@@ -39,9 +39,6 @@ public class UserService {
 
     private final PasswordEncoder passwordEncoder;
 
-    private final VerificationCodeService
-            verificationCodeService;
-
     private static final long MAX_PASSENGERS_PER_USER = 20;
 
     private final PassengerMapper passengerMapper;
@@ -64,30 +61,9 @@ public class UserService {
                 user.getPhone()
         )) {
 
-            verificationCodeService.verify(
-                    request.phone(),
-                    request.verificationCode()
+            throw new BusinessException(
+                    ErrorCode.PHONE_BINDING_DISABLED
             );
-
-            Long count = userMapper.selectCount(
-                    Wrappers.<User>lambdaQuery()
-                            .eq(
-                                    User::getPhone,
-                                    request.phone()
-                            )
-                            .ne(
-                                    User::getId,
-                                    userId
-                            )
-            );
-
-            if (count > 0) {
-                throw new BusinessException(
-                        ErrorCode.PHONE_EXISTS
-                );
-            }
-
-            user.setPhone(request.phone());
         }
 
         if (request.nickname() != null) {
@@ -96,11 +72,10 @@ public class UserService {
             );
         }
 
-        if (request.email() != null) {
-            user.setEmail(
-                    request.email().isBlank()
-                            ? null
-                            : request.email().trim()
+        if (request.email() != null
+                && !request.email().trim().equalsIgnoreCase(user.getEmail())) {
+            throw new BusinessException(
+                    ErrorCode.EMAIL_CHANGE_DISABLED
             );
         }
 

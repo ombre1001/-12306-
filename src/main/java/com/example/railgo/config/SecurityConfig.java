@@ -72,6 +72,7 @@ public class SecurityConfig {
                         // 登录、注册、刷新令牌
                         .requestMatchers(
                                 "/auth/login",
+                                "/auth/email/code",
                                 "/auth/register",
                                 "/auth/refresh"
                         ).permitAll()

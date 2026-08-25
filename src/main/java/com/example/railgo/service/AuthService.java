@@ -6,6 +6,7 @@ import com.example.railgo.data.dto.LoginRequest;
 import com.example.railgo.data.dto.LogoutRequest;
 import com.example.railgo.data.dto.RefreshTokenRequest;
 import com.example.railgo.data.dto.RegisterRequest;
+import com.example.railgo.data.dto.SendEmailCodeRequest;
 import com.example.railgo.data.po.AuthRefreshToken;
 import com.example.railgo.data.po.User;
 import com.example.railgo.data.vo.AuthResponse;
@@ -19,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -40,8 +42,8 @@ public class AuthService {
 
     private final JwtTokenProvider tokenProvider;
 
-    private final VerificationCodeService
-            verificationCodeService;
+    private final EmailVerificationCodeService
+            emailVerificationCodeService;
 
     private final LoginAttemptService
             loginAttemptService;
@@ -52,22 +54,24 @@ public class AuthService {
     public AuthResponse register(
             RegisterRequest request) {
 
-        verificationCodeService.verify(
-                request.phone(),
-                request.verificationCode()
-        );
+        String email = emailVerificationCodeService.normalize(request.email());
 
-        if (findByPhone(request.phone()) != null) {
+        if (findByEmail(email) != null) {
             throw new BusinessException(
-                    ErrorCode.PHONE_EXISTS
+                    ErrorCode.EMAIL_EXISTS
             );
         }
+
+        emailVerificationCodeService.verifyAndConsume(
+                email,
+                request.verificationCode()
+        );
 
         LocalDateTime now = LocalDateTime.now();
 
         User user = new User();
 
-        user.setPhone(request.phone());
+        user.setEmail(email);
 
         user.setPasswordHash(
                 passwordEncoder.encode(
@@ -80,8 +84,10 @@ public class AuthService {
 
             user.setNickname(
                     "用户"
-                            + request.phone()
-                            .substring(7)
+                            + email.substring(
+                                    0,
+                                    Math.min(email.indexOf('@'), 8)
+                            )
             );
 
         } else {
@@ -94,7 +100,11 @@ public class AuthService {
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
 
-        userMapper.insert(user);
+        try {
+            userMapper.insert(user);
+        } catch (DuplicateKeyException exception) {
+            throw new BusinessException(ErrorCode.EMAIL_EXISTS);
+        }
 
         int roleRows = userMapper.insertUserRole(
                 user.getId(),
@@ -115,12 +125,12 @@ public class AuthService {
     public AuthResponse login(
             LoginRequest request) {
 
-        loginAttemptService.checkAllowed(
-                request.phone()
-        );
+        String account = normalizeAccount(request.account());
 
-        User user = findByPhone(
-                request.phone()
+        loginAttemptService.checkAllowed(account);
+
+        User user = findByAccount(
+                account
         );
 
         if (user == null
@@ -130,7 +140,7 @@ public class AuthService {
         )) {
 
             loginAttemptService.recordFailure(
-                    request.phone()
+                    account
             );
 
             throw new BusinessException(
@@ -138,29 +148,22 @@ public class AuthService {
             );
         }
 
-        if (!"ENABLED".equals(
-                user.getStatus()
-        )) {
-            throw new BusinessException(
-                    ErrorCode.ACCOUNT_DISABLED
-            );
-        }
-
         loginAttemptService.recordSuccess(
-                request.phone()
+                account
         );
 
-        user.setLastLoginAt(
-                LocalDateTime.now()
-        );
+        return completeLogin(user);
+    }
 
-        user.setUpdatedAt(
-                LocalDateTime.now()
-        );
+    public void sendEmailRegistrationCode(
+            SendEmailCodeRequest request,
+            String clientIp) {
 
-        userMapper.updateById(user);
-
-        return issueTokens(user);
+        String email = emailVerificationCodeService.normalize(request.email());
+        if (findByEmail(email) != null) {
+            throw new BusinessException(ErrorCode.EMAIL_EXISTS);
+        }
+        emailVerificationCodeService.sendRegistrationCode(email, clientIp);
     }
 
     @Transactional
@@ -364,6 +367,18 @@ public class AuthService {
         );
     }
 
+    private AuthResponse completeLogin(User user) {
+        if (!"ENABLED".equals(user.getStatus())) {
+            throw new BusinessException(ErrorCode.ACCOUNT_DISABLED);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        user.setLastLoginAt(now);
+        user.setUpdatedAt(now);
+        userMapper.updateById(user);
+        return issueTokens(user);
+    }
+
     private User findByPhone(
             String phone) {
 
@@ -375,5 +390,29 @@ public class AuthService {
                                 phone
                         )
         );
+    }
+
+    private User findByEmail(String email) {
+        return userMapper.selectOne(
+                Wrappers.<User>lambdaQuery()
+                        .eq(User::getEmail, email)
+        );
+    }
+
+    private User findByAccount(String rawAccount) {
+        String account = normalizeAccount(rawAccount);
+        if (account.contains("@")) {
+            return findByEmail(
+                    emailVerificationCodeService.normalize(account)
+            );
+        }
+        return findByPhone(account);
+    }
+
+    private String normalizeAccount(String rawAccount) {
+        String account = rawAccount.trim();
+        return account.contains("@")
+                ? emailVerificationCodeService.normalize(account)
+                : account;
     }
 }

@@ -19,10 +19,14 @@ public enum ErrorCode {
     CHANGE_EXPIRED(40015, HttpStatus.BAD_REQUEST, "改签申请已超时"),
 
     VERIFICATION_CODE_ERROR(40003, HttpStatus.BAD_REQUEST, "验证码错误或已失效"),
+    SMS_TOO_FREQUENT(42901, HttpStatus.TOO_MANY_REQUESTS, "验证码发送过于频繁，请稍后再试"),
+    SMS_LIMIT_EXCEEDED(42902, HttpStatus.TOO_MANY_REQUESTS, "验证码发送次数已达上限，请稍后再试"),
+    EMAIL_TOO_FREQUENT(42903, HttpStatus.TOO_MANY_REQUESTS, "邮件验证码发送过于频繁，请稍后再试"),
+    EMAIL_LIMIT_EXCEEDED(42904, HttpStatus.TOO_MANY_REQUESTS, "邮件验证码发送次数已达上限，请稍后再试"),
 
     UNAUTHORIZED(40101, HttpStatus.UNAUTHORIZED, "未登录或令牌已失效"),
 
-    LOGIN_FAILED(40102, HttpStatus.UNAUTHORIZED, "手机号或密码错误"),
+    LOGIN_FAILED(40102, HttpStatus.UNAUTHORIZED, "账号或密码错误"),
 
     ACCOUNT_LOCKED(40103, HttpStatus.TOO_MANY_REQUESTS, "登录失败次数过多，请稍后再试"),
 
@@ -58,6 +62,10 @@ public enum ErrorCode {
     DUPLICATE_RETURN_REQUEST(40943, HttpStatus.CONFLICT, "请勿重复提交退票请求"),
 
     PHONE_EXISTS(40905, HttpStatus.CONFLICT, "手机号已注册"),
+    PHONE_NOT_REGISTERED(40402, HttpStatus.NOT_FOUND, "手机号尚未注册"),
+    EMAIL_EXISTS(40954, HttpStatus.CONFLICT, "邮箱已注册"),
+    PHONE_BINDING_DISABLED(40955, HttpStatus.CONFLICT, "手机号绑定功能暂未开放"),
+    EMAIL_CHANGE_DISABLED(40956, HttpStatus.CONFLICT, "登录邮箱修改功能暂未开放"),
 
     OLD_PASSWORD_ERROR(40906, HttpStatus.CONFLICT, "原密码错误"),
 
@@ -70,6 +78,8 @@ public enum ErrorCode {
     PASSENGER_IN_USE(40910, HttpStatus.CONFLICT, "乘车人已被有效订单使用，不能删除"),
 
     DATABASE_ERROR(50001, HttpStatus.INTERNAL_SERVER_ERROR, "数据库操作失败"),
+    SMS_SEND_FAILED(50030, HttpStatus.SERVICE_UNAVAILABLE, "短信发送失败，请稍后再试"),
+    EMAIL_SEND_FAILED(50031, HttpStatus.SERVICE_UNAVAILABLE, "验证码邮件发送失败，请稍后再试"),
 
     INVENTORY_INITIALIZATION_FAILED(50011, HttpStatus.INTERNAL_SERVER_ERROR, "区间库存初始化失败"),
     ORDER_CREATE_FAILED(50012, HttpStatus.INTERNAL_SERVER_ERROR, "订单创建失败"),
