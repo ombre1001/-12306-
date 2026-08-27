@@ -23,7 +23,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Locale;
 
 @Slf4j
 @Service
@@ -34,6 +33,7 @@ public class TrainSyncMergeService {
     private final TrainStopMapper trainStopMapper;
     private final TrainRunMapper trainRunMapper;
     private final StationMapper stationMapper;
+    private final StationAutoRepairService stationAutoRepairService;
     private final TrainSyncProperties properties;
 
     @Transactional
@@ -64,17 +64,15 @@ public class TrainSyncMergeService {
         train.setSourceTrainCode(source.sourceTrainCode());
         train.setTrainType(source.trainType());
         train.setOriginStationId(
-                requireEndpointStation(
+                stationAutoRepairService.resolveEndpoint(
                         source.fromStationCode(),
-                        sourceStops.getFirst().stationName(),
-                        "始发站"
+                        sourceStops.getFirst().stationName()
                 ).getId()
         );
         train.setDestinationStationId(
-                requireEndpointStation(
+                stationAutoRepairService.resolveEndpoint(
                         source.toStationCode(),
-                        sourceStops.getLast().stationName(),
-                        "终到站"
+                        sourceStops.getLast().stationName()
                 ).getId()
         );
         train.setUpdatedAt(now);
@@ -114,7 +112,9 @@ public class TrainSyncMergeService {
                 TrainStop stop = new TrainStop();
                 stop.setTrainId(train.getId());
                 stop.setStationId(
-                        requireStationByName(sourceStop.stationName()).getId()
+                        stationAutoRepairService.resolveStop(
+                                sourceStop.stationName()
+                        ).getId()
                 );
                 stop.setStopSeq(sourceStop.stopSeq());
                 stop.setArrivalTime(sourceStop.arrivalTime());
@@ -154,108 +154,6 @@ public class TrainSyncMergeService {
         }
 
         return new MergeResult(scheduleChanged, sourceStops.size());
-    }
-
-    /**
-     * 12306余票接口中的始发/终到电报码偶尔会使用车次内部编码，
-     * 尤其是环线车次和运行图刚调整的车次。此时仍以经停站接口
-     * 返回的首站、末站名称作为可信回退，避免整趟车同步失败。
-     */
-    private Station requireEndpointStation(
-            String stationCode,
-            String stationName,
-            String endpointLabel
-    ) {
-        Station byCode = findStationByCode(stationCode);
-        if (byCode != null) {
-            return byCode;
-        }
-
-        Station byName = findStationByName(stationName);
-        if (byName != null) {
-            log.warn(
-                    "{}电报码{}在station表中不存在，已按名称{}匹配到stationId={}、现有电报码={}",
-                    endpointLabel,
-                    stationCode,
-                    stationName,
-                    byName.getId(),
-                    byName.getStationCode()
-            );
-            return byName;
-        }
-
-        throw new IllegalStateException(
-                "station表缺少" + endpointLabel
-                        + "：三字码=" + stationCode
-                        + "，名称=" + stationName
-        );
-    }
-
-    private Station findStationByCode(String stationCode) {
-        String code = stationCode == null
-                ? ""
-                : stationCode.trim().toUpperCase(Locale.ROOT);
-        if (code.isBlank()) {
-            return null;
-        }
-
-        Station station = stationMapper.selectOne(
-                Wrappers.<Station>lambdaQuery()
-                        .eq(Station::getStationCode, code)
-                        .last("LIMIT 1")
-        );
-        return station;
-    }
-
-    private Station requireStationByName(String rawName) {
-        Station station = findStationByName(rawName);
-        if (station != null) {
-            return station;
-        }
-
-        throw new IllegalStateException(
-                "station表缺少车站：" + rawName
-        );
-    }
-
-    private Station findStationByName(String rawName) {
-        String name = normalizeStationName(rawName);
-        if (name.isBlank()) {
-            return null;
-        }
-
-        Station station = stationMapper.selectOne(
-                Wrappers.<Station>lambdaQuery()
-                        .and(query -> query.eq(Station::getName, name)
-                                .or()
-                                .eq(Station::getNormalizedName, name))
-                        .last("LIMIT 1")
-        );
-        if (station != null) {
-            return station;
-        }
-
-        /*
-         * 兼容历史车站数据中的“嘉兴南站(高铁)”等名称。
-         * 先限制前缀范围，再在Java中按同一规则规范化后严格比较，
-         * 避免使用宽泛的LIKE直接误匹配到其他车站。
-         */
-        List<Station> candidates = stationMapper.selectList(
-                Wrappers.<Station>lambdaQuery()
-                        .and(query -> query
-                                .likeRight(Station::getName, name)
-                                .or()
-                                .likeRight(Station::getNormalizedName, name))
-                        .last("LIMIT 20")
-        );
-        return candidates.stream()
-                .filter(candidate -> name.equals(
-                        normalizeStationName(candidate.getName())
-                ) || name.equals(
-                        normalizeStationName(candidate.getNormalizedName())
-                ))
-                .findFirst()
-                .orElse(null);
     }
 
     private String normalizeStationName(String name) {

@@ -21,6 +21,9 @@ public class TrainSyncProperties {
             "https://kyfw.12306.cn/otn/leftTicket/query";
     private String trainInfoUrl =
             "https://kyfw.12306.cn/otn/queryTrainInfo/query";
+    private String stationNameUrl =
+            "https://kyfw.12306.cn/otn/resources/js/framework/station_name.js";
+    private Duration stationDirectoryTtl = Duration.ofHours(12);
 
     /** 每个热门区间最多选取的车次数。 */
     private int trainsPerRoute = 3;

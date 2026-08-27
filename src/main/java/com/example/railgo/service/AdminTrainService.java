@@ -847,11 +847,9 @@ public class AdminTrainService {
         for (Train train : trains) {
             Long trainId = train.getId();
             log.info(
-                    "开始初始化车厢座位：trainId={}, trainNo={}, 当前进度={}/{}",
+                    "开始初始化车厢座位：trainId={}, trainNo={}",
                     trainId,
-                    train.getTrainNo(),
-                    initializedTrainCount + 1,
-                    trains.size()
+                    train.getTrainNo()
             );
 
             /*
