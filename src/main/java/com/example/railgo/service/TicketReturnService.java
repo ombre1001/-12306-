@@ -38,10 +38,11 @@ public class TicketReturnService {
     private final RefundRecordMapper refundRecordMapper;
     private final OrderItemMapper orderItemMapper;
     private final InventoryMapper inventoryMapper;
+    private final TicketChangeService ticketChangeService;
 
     @Transactional(rollbackFor = Exception.class)
     public TicketReturnPreviewResponse preview(Long userId, Long ticketId) {
-        ReturnableTicketRow ticket = requireReturnableTicket(userId, ticketId);
+        ReturnableTicketRow ticket = requireReturnableTicket(userId, ticketId, false);
         Fee fee = calculateFee(ticket.getPrice(), ticket.getDepartureDateTime());
         return TicketReturnPreviewResponse.builder()
                 .ticketId(ticket.getTicketId())
@@ -71,7 +72,7 @@ public class TicketReturnService {
             return requireReturnDetail(userId, repeated.getId());
         }
 
-        ReturnableTicketRow ticket = requireReturnableTicket(userId, ticketId);
+        ReturnableTicketRow ticket = requireReturnableTicket(userId, ticketId, true);
         PaymentRecord payment = paymentRecordMapper.selectSuccessfulByOrderIdForUpdate(
                 ticket.getOrderId());
         if (payment == null) {
@@ -156,7 +157,8 @@ public class TicketReturnService {
         return response;
     }
 
-    private ReturnableTicketRow requireReturnableTicket(Long userId, Long ticketId) {
+    private ReturnableTicketRow requireReturnableTicket(Long userId, Long ticketId,
+                                                        boolean cancelPendingChange) {
         ReturnableTicketRow ticket = ticketReturnMapper.selectReturnableTicketForUpdate(ticketId, userId);
         if (ticket == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND);
@@ -170,8 +172,8 @@ public class TicketReturnService {
                 || !ticket.getDepartureDateTime().isAfter(LocalDateTime.now())) {
             throw new BusinessException(ErrorCode.TICKET_RETURN_NOT_ALLOWED, "车票已经发车，不能退票");
         }
-        if (ticketReturnMapper.countActiveChange(ticketId) > 0) {
-            throw new BusinessException(ErrorCode.TICKET_RETURN_NOT_ALLOWED, "车票存在未完成改签，不能退票");
+        if (cancelPendingChange) {
+            ticketChangeService.cancelPendingChangesForTicket(userId, ticketId);
         }
         return ticket;
     }

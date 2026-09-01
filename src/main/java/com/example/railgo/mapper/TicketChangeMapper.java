@@ -20,12 +20,17 @@ public interface TicketChangeMapper extends BaseMapper<TicketChange> {
     TicketChange selectByClientRequestId(@Param("userId") Long userId,
                                          @Param("clientRequestId") String clientRequestId);
 
+    TicketChange selectOwnedChange(@Param("changeId") Long changeId,
+                                   @Param("userId") Long userId);
+
     TicketChange selectOwnedChangeForUpdate(@Param("changeId") Long changeId,
                                             @Param("userId") Long userId);
 
-    int countSuccessfulChanges(@Param("oldTicketId") Long oldTicketId);
+    List<TicketChange> selectPendingChangesByTicketForUpdate(
+            @Param("oldTicketId") Long oldTicketId,
+            @Param("userId") Long userId);
 
-    int countActiveChanges(@Param("oldTicketId") Long oldTicketId);
+    int countSuccessfulChanges(@Param("oldTicketId") Long oldTicketId);
 
     int countOtherTravelConflict(@Param("userId") Long userId,
                                  @Param("passengerId") Long passengerId,

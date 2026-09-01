@@ -40,22 +40,31 @@
         LIMIT 1
     </select>
 
+    <select id="selectOwnedChange" resultType="com.example.railgo.data.po.TicketChange">
+        SELECT * FROM change_record
+        WHERE id = #{changeId} AND user_id = #{userId}
+        LIMIT 1
+    </select>
+
     <select id="selectOwnedChangeForUpdate" resultType="com.example.railgo.data.po.TicketChange">
         SELECT * FROM change_record
         WHERE id = #{changeId} AND user_id = #{userId}
         LIMIT 1 FOR UPDATE
     </select>
 
+    <select id="selectPendingChangesByTicketForUpdate"
+            resultType="com.example.railgo.data.po.TicketChange">
+        SELECT * FROM change_record
+        WHERE old_order_item_id = #{oldTicketId}
+          AND user_id = #{userId}
+          AND status IN ('WAITING_CONFIRMATION', 'WAITING_PAYMENT')
+        ORDER BY id
+        FOR UPDATE
+    </select>
+
     <select id="countSuccessfulChanges" resultType="java.lang.Integer">
         SELECT COUNT(*) FROM change_record
         WHERE old_order_item_id = #{oldTicketId} AND status = 'COMPLETED'
-    </select>
-
-    <select id="countActiveChanges" resultType="java.lang.Integer">
-        SELECT COUNT(*) FROM change_record
-        WHERE old_order_item_id = #{oldTicketId}
-          AND status IN ('WAITING_CONFIRMATION', 'WAITING_PAYMENT')
-          AND expire_at &gt; NOW()
     </select>
 
     <select id="countOtherTravelConflict" resultType="java.lang.Integer">

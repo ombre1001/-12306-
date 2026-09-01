@@ -41,14 +41,6 @@
         LIMIT 1
     </select>
 
-    <select id="countActiveChange" resultType="java.lang.Integer">
-        SELECT COUNT(*)
-        FROM change_record
-        WHERE (old_order_item_id = #{ticketId} OR new_order_item_id = #{ticketId})
-          AND status IN ('WAITING_CONFIRMATION', 'WAITING_PAYMENT')
-          AND expire_at &gt; NOW()
-    </select>
-
     <select id="countIssuedTickets" resultType="java.lang.Integer">
         SELECT COUNT(*)
         FROM order_item

@@ -16,8 +16,6 @@ public interface TicketReturnMapper extends BaseMapper<TicketReturn> {
     TicketReturn selectByUserAndClientRequestId(@Param("userId") Long userId,
                                                  @Param("clientRequestId") String clientRequestId);
 
-    int countActiveChange(@Param("ticketId") Long ticketId);
-
     int countIssuedTickets(@Param("orderId") Long orderId);
 
     int updateOrderStatus(@Param("orderId") Long orderId,

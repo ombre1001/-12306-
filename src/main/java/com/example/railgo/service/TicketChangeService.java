@@ -56,7 +56,6 @@ public class TicketChangeService {
             throw new BusinessException(ErrorCode.INVALID_TRAVEL_DATE);
         }
         ChangeTicketRow oldTicket = requireChangeableTicket(userId, ticketId);
-        ensureNoExistingChange(ticketId);
         return ticketChangeMapper.selectChangeOptions(oldTicket.getTicketId(), userId, travelDate)
                 .stream().filter(option -> option.getAvailableCount() != null
                         && option.getAvailableCount() > 0).toList();
@@ -65,10 +64,10 @@ public class TicketChangeService {
     @Transactional(rollbackFor = Exception.class, isolation = Isolation.READ_COMMITTED)
     public ChangeDetailResponse preview(Long userId, Long ticketId, ChangePreviewRequest request) {
         ChangeTicketRow oldTicket = requireChangeableTicket(userId, ticketId);
-        ensureNoExistingChange(ticketId);
         if (ticketChangeMapper.selectByClientRequestId(userId, request.getClientRequestId()) != null) {
             throw new BusinessException(ErrorCode.CHANGE_DUPLICATE_REQUEST);
         }
+        cancelPendingChangesForTicket(userId, ticketId);
         if (!oldTicket.getFromStationId().equals(request.getFromStationId())
                 || !oldTicket.getToStationId().equals(request.getToStationId())) {
             throw new BusinessException(ErrorCode.INVALID_ROUTE, "改签前后乘车区间必须一致");
@@ -214,13 +213,28 @@ public class TicketChangeService {
         return ticket;
     }
 
-    private void ensureNoExistingChange(Long ticketId) {
-        if (ticketChangeMapper.countActiveChanges(ticketId) > 0) {
-            throw new BusinessException(ErrorCode.CHANGE_ALREADY_PROCESSING);
+    /**
+     * 用户重新改签或确认退票时，撤销该车票遗留的未完成改签并立即释放锁座。
+     * 页面异常关闭时前端可能来不及调用取消接口，因此业务入口还需要提供兜底恢复能力。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public int cancelPendingChangesForTicket(Long userId, Long ticketId) {
+        int cancelled = 0;
+        for (TicketChange change : ticketChangeMapper.selectPendingChangesByTicketForUpdate(
+                ticketId, userId)) {
+            cancelLockedNewTicket(change, ChangeStatus.CANCELLED);
+            cancelled++;
         }
+        return cancelled;
     }
 
     private TicketChange requireActiveChange(Long userId, Long changeId) {
+        TicketChange snapshot = ticketChangeMapper.selectOwnedChange(changeId, userId);
+        if (snapshot == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND);
+        }
+        // 与重新改签、退票保持相同的锁顺序：先原车票，再改签记录，避免并发确认时死锁。
+        ticketChangeMapper.selectOwnedTicketForUpdate(snapshot.getOldOrderItemId(), userId);
         TicketChange change = ticketChangeMapper.selectOwnedChangeForUpdate(changeId, userId);
         if (change == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND);

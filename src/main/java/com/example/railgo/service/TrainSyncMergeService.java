@@ -4,9 +4,11 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.example.railgo.data.po.Station;
 import com.example.railgo.config.TrainSyncProperties;
 import com.example.railgo.data.po.Train;
+import com.example.railgo.data.po.TrainFare;
 import com.example.railgo.data.po.TrainRun;
 import com.example.railgo.data.po.TrainStop;
 import com.example.railgo.mapper.StationMapper;
+import com.example.railgo.mapper.TrainFareMapper;
 import com.example.railgo.mapper.TrainMapper;
 import com.example.railgo.mapper.TrainRunMapper;
 import com.example.railgo.mapper.TrainStopMapper;
@@ -30,6 +32,7 @@ import java.util.List;
 public class TrainSyncMergeService {
 
     private final TrainMapper trainMapper;
+    private final TrainFareMapper trainFareMapper;
     private final TrainStopMapper trainStopMapper;
     private final TrainRunMapper trainRunMapper;
     private final StationMapper stationMapper;
@@ -104,25 +107,37 @@ public class TrainSyncMergeService {
                 );
             }
 
-            trainStopMapper.delete(
-                    Wrappers.<TrainStop>lambdaQuery()
-                            .eq(TrainStop::getTrainId, train.getId())
-            );
-            for (SourceStop sourceStop : sourceStops) {
-                TrainStop stop = new TrainStop();
-                stop.setTrainId(train.getId());
-                stop.setStationId(
-                        stationAutoRepairService.resolveStop(
-                                sourceStop.stationName()
-                        ).getId()
+            if (hasSameStopStructure(oldStops, sourceStops)) {
+                updateStopTimes(oldStops, sourceStops);
+            } else {
+                Long fareCount = trainFareMapper.selectCount(
+                        Wrappers.<TrainFare>lambdaQuery()
+                                .eq(TrainFare::getTrainId, train.getId())
                 );
-                stop.setStopSeq(sourceStop.stopSeq());
-                stop.setArrivalTime(sourceStop.arrivalTime());
-                stop.setArrivalDayOffset(sourceStop.arrivalDayOffset());
-                stop.setDepartureTime(sourceStop.departureTime());
-                stop.setDepartureDayOffset(sourceStop.departureDayOffset());
-                stop.setDistanceKm(0);
-                trainStopMapper.insert(stop);
+                if (fareCount > 0) {
+                    throw new IllegalStateException(
+                            source.trainNo()
+                                    + "经停站结构发生变化，且已有票价区间；请先迁移或清理票价"
+                    );
+                }
+
+                trainStopMapper.delete(
+                        Wrappers.<TrainStop>lambdaQuery()
+                                .eq(TrainStop::getTrainId, train.getId())
+                );
+                for (SourceStop sourceStop : sourceStops) {
+                    TrainStop stop = new TrainStop();
+                    stop.setTrainId(train.getId());
+                    stop.setStationId(
+                            stationAutoRepairService.resolveStop(
+                                    sourceStop.stationName()
+                            ).getId()
+                    );
+                    stop.setStopSeq(sourceStop.stopSeq());
+                    applyStopTimes(stop, sourceStop);
+                    stop.setDistanceKm(0);
+                    trainStopMapper.insert(stop);
+                }
             }
         }
 
@@ -154,6 +169,45 @@ public class TrainSyncMergeService {
         }
 
         return new MergeResult(scheduleChanged, sourceStops.size());
+    }
+
+    private boolean hasSameStopStructure(
+            List<TrainStop> oldStops,
+            List<SourceStop> sourceStops
+    ) {
+        if (oldStops.size() != sourceStops.size()) {
+            return false;
+        }
+        for (int index = 0; index < oldStops.size(); index++) {
+            TrainStop oldStop = oldStops.get(index);
+            SourceStop sourceStop = sourceStops.get(index);
+            Station station = stationMapper.selectById(oldStop.getStationId());
+            if (station == null
+                    || !oldStop.getStopSeq().equals(sourceStop.stopSeq())
+                    || !normalizeStationName(station.getName()).equals(
+                    normalizeStationName(sourceStop.stationName()))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void updateStopTimes(
+            List<TrainStop> oldStops,
+            List<SourceStop> sourceStops
+    ) {
+        for (int index = 0; index < oldStops.size(); index++) {
+            TrainStop stop = oldStops.get(index);
+            applyStopTimes(stop, sourceStops.get(index));
+            trainStopMapper.updateById(stop);
+        }
+    }
+
+    private void applyStopTimes(TrainStop stop, SourceStop sourceStop) {
+        stop.setArrivalTime(sourceStop.arrivalTime());
+        stop.setArrivalDayOffset(sourceStop.arrivalDayOffset());
+        stop.setDepartureTime(sourceStop.departureTime());
+        stop.setDepartureDayOffset(sourceStop.departureDayOffset());
     }
 
     private String normalizeStationName(String name) {
